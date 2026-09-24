@@ -9,7 +9,10 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 FROM base AS deps
 COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# Cache mount + retries: survives slow or unstable internet, and a retry reuses downloads.
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --no-audit --no-fund --fetch-retries=10 --fetch-retry-mintimeout=20000 \
+    --fetch-retry-maxtimeout=120000 --fetch-timeout=600000
 
 FROM deps AS dev
 COPY . .

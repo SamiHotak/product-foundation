@@ -7,7 +7,7 @@ Browser ──► Next.js (port 3000) ──/api/*──► FastAPI (port 8000) 
                                                 │
                                                 ├──► Redis ◄── Celery worker (background jobs)
                                                 │          ◄── Celery beat (scheduled jobs)
-                                                ├──► S3 storage (MinIO locally, Hetzner in prod)
+                                                ├──► S3 storage (phase 4B; Hetzner Object Storage in prod)
                                                 └──► Email provider (Mailpit locally)
 ```
 

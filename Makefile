@@ -29,7 +29,6 @@ dev: ## Build and start all services in the background
 	@echo "App:      http://localhost:3000"
 	@echo "API docs: http://localhost:8000/api/docs"
 	@echo "Emails:   http://localhost:8025"
-	@echo "Files:    http://localhost:9001  (minioadmin / minioadmin)"
 	@echo "Logs:     make logs"
 
 down:

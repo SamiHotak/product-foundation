@@ -13,7 +13,7 @@ with GitHub's **Use this template** button.
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2, Alembic, PostgreSQL 16 + pgvector |
 | Background jobs | Celery worker + Celery beat, Redis |
 | Frontend | Next.js 16 (App Router), TypeScript, Tailwind CSS 4, shadcn/ui style components |
-| Local services | MinIO (S3 files), Mailpit (catches emails) |
+| Local services | Mailpit (catches emails). S3 file storage is added in phase 4B |
 
 More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -80,7 +80,6 @@ Then open:
 | App | http://localhost:3000 |
 | API docs | http://localhost:8000/api/docs |
 | Emails (Mailpit) | http://localhost:8025 |
-| Files (MinIO) | http://localhost:9001 — `minioadmin` / `minioadmin` |
 
 The frontend waits for the backend to be healthy, so the app can take ~30 seconds after `make dev` finishes.
 
