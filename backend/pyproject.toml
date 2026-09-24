@@ -1,0 +1,43 @@
+[project]
+name = "product-foundation-backend"
+version = "0.1.0"
+description = "Shared SaaS backend foundation (FastAPI, SQLAlchemy, Celery)."
+requires-python = ">=3.12,<3.13"
+
+# Runtime dependencies are pinned in requirements.txt (exact versions).
+# Dev/test tools are pinned in requirements-dev.txt.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "S", "SIM", "RUF", "ASYNC"]
+ignore = ["S101"]  # assert is fine in tests
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+exclude = ["alembic/versions/"]
+
+[[tool.mypy.overrides]]
+module = ["celery.*", "kombu.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+  "integration: needs real Postgres and Redis (run with `make test` / in CI)",
+]
+addopts = "-ra --strict-markers"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/scripts/*"]

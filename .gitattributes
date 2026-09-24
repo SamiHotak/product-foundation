@@ -1,0 +1,7 @@
+# Force Linux line endings in the repo. Without this, Windows Git can turn
+# files into CRLF and shell scripts / Dockerfiles break inside containers.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
