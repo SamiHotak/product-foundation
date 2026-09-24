@@ -4,7 +4,7 @@ A reusable SaaS starter: FastAPI + Postgres + Redis + Celery backend, Next.js fr
 Every product (AskDocs, LeadPilot, InvoiceAI Pro, CountVision) is created from this repo
 with GitHub's **Use this template** button.
 
-**Status:** phase 1A — skeleton, local development, logging, errors, health checks, background jobs, app shell.
+**Status:** phase 1B — skeleton, local development, app shell, typed API client, background jobs with live status, CI, pre-commit hooks.
 
 ## What's inside
 
@@ -13,6 +13,9 @@ with GitHub's **Use this template** button.
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2, Alembic, PostgreSQL 16 + pgvector |
 | Background jobs | Celery worker + Celery beat, Redis |
 | Frontend | Next.js 16 (App Router), TypeScript, Tailwind CSS 4, shadcn/ui style components |
+| API client | Generated TypeScript types from the FastAPI OpenAPI schema (`openapi-typescript` + `openapi-fetch`) |
+| Tests | pytest (unit + real Postgres/Redis), Playwright end-to-end in Docker |
+| CI | GitHub Actions: ruff, mypy, migrations, pytest, client check, eslint, build, Playwright |
 | Local services | Mailpit (catches emails). S3 file storage is added in phase 4B |
 
 More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -94,6 +97,9 @@ The frontend waits for the backend to be healthy, so the app can take ~30 second
 | `make test` | Backend tests, including real Postgres + Redis |
 | `make lint` | ruff + mypy (backend), eslint + typecheck (frontend) |
 | `make format` | Auto-format all code |
+| `make api-client` | Regenerate the typed frontend API client. Run it after **any** backend route or schema change |
+| `make e2e` | Browser tests (Playwright, inside Docker) against the running app |
+| `make check` | Everything CI checks: lint, tests, API client, e2e. Run before `git push` |
 | `make migrate` | Apply database migrations |
 | `make migration name=add_users` | Create a migration after changing models |
 | `make seed` | Load development data |
@@ -103,6 +109,74 @@ The frontend waits for the backend to be healthy, so the app can take ~30 second
 | `make clean` | Stop everything and **delete** local data |
 
 Saving a file reloads the backend, the worker and the frontend automatically.
+
+## Check everything before you push
+
+With `make dev` running:
+
+```powershell
+make check
+git status
+```
+
+`make check` runs lint, backend tests, regenerates the API client and runs the browser tests.
+The first `make e2e` downloads the Playwright image (about 2 GB, once).
+If `git status` then shows changed files in `frontend/lib/api`, commit them — CI fails if the
+committed API client does not match the backend.
+
+Browser test report: open `frontend/playwright-report/index.html`.
+
+## Pre-commit hooks (one time, optional but recommended)
+
+They check your files on every `git commit` (whitespace, line endings, YAML/JSON, private keys,
+Python lint and format). They need Python on Windows (see step 1).
+
+```powershell
+cd $HOME\Documents\product-foundation
+py -3.12 -m pip install pre-commit==4.6.2
+py -3.12 -m pre_commit install
+py -3.12 -m pre_commit run --all-files
+```
+
+If a hook **fixes** a file, the commit stops. Run `git add -A` and commit again.
+CI runs the same hooks, so nothing is lost if you skip this.
+
+## The typed API client
+
+The frontend never writes API types by hand. The flow:
+
+1. You change a backend route or schema (`backend/app/schemas/...`).
+2. `make api-client` writes `frontend/lib/api/openapi.json` and generates `frontend/lib/api/schema.d.ts`.
+3. TypeScript now knows every path, parameter and response:
+
+```ts
+import { api, unwrap } from "@/lib/api";
+
+const job = await unwrap(api.GET("/api/jobs/{job_id}", { params: { path: { job_id: id } } }));
+```
+
+`unwrap` returns the data or throws an `ApiError` with a message you can show to the user.
+
+## Background jobs
+
+Long work (imports, AI calls, reports) runs in the Celery worker, never inside a request.
+Every job has a row in the `jobs` table with status, progress %, message and result,
+so the UI can show live progress. Try it: **Dashboard → Run example job**.
+
+To add a job to a product:
+
+1. Write a task in `backend/app/workers/tasks.py` with `base=JobTask` and a `job_id` argument.
+   Call `make_reporter(job_id).progress(40, "Reading page 4 of 10")` while it works.
+   Raise `JobFailedError("message for the user")` for failures the user should read.
+2. Register it in `backend/app/workers/registry.py`.
+3. Start it from a service with `JobService.enqueue("your-kind", params)`.
+4. In the UI, follow it with `useJob(jobId)` and show `<JobProgress job={job} />`.
+
+Temporary errors (`TemporaryError`) are retried with backoff (up to 3 times).
+Other errors show a safe message to the user; the full error is in `make logs s=worker`.
+
+Note: until phase 2 adds login, the jobs API is switched **off in production**
+(`JOBS_API_ENABLED`), because an open job queue could be abused.
 
 ## Change the product name and colour
 
@@ -121,6 +195,14 @@ Edit `frontend/config/product.ts` (name, tagline, monogram, accent colours, menu
 **The app shows "API not available"** — run `make logs s=backend` and read the last error.
 
 **Changes to frontend files don't show** — run `make restart s=frontend`. Hot reload from a Windows folder into Docker uses polling and is sometimes slow.
+
+**`make e2e` fails** — open `frontend/playwright-report/index.html`: it shows a screenshot and a
+step-by-step trace of the failing test. Check that `make dev` is running and the app opens.
+
+**CI fails at "OpenAPI schema is up to date" or "Typed API client is up to date"** — run
+`make api-client`, then commit the changed files in `frontend/lib/api`.
+
+**CI fails at "Pre-commit hooks"** — run `py -3.12 -m pre_commit run --all-files`, then commit the fixes.
 
 **Something is badly broken** — `make clean` then `make dev` (this deletes your local database).
 

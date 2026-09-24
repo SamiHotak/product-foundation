@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRoute
 
 from app import __version__
 from app.core.config import Settings, get_settings
@@ -15,7 +16,8 @@ from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestContextMiddleware
 from app.db.session import get_async_engine
-from app.routers import health
+from app.routers import health, jobs
+from app.schemas.errors import error_responses
 
 logger = get_logger(__name__)
 
@@ -28,6 +30,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
     await get_async_engine().dispose()
     logger.info("shutdown")
+
+
+def operation_id(route: APIRoute) -> str:
+    """Use the Python function name as the OpenAPI operationId (stable, readable client)."""
+    return route.name
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -43,6 +50,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         docs_url=None if settings.is_production else f"{settings.api_prefix}/docs",
         redoc_url=None,
         openapi_url=None if settings.is_production else f"{settings.api_prefix}/openapi.json",
+        generate_unique_id_function=operation_id,
     )
     app.state.settings = settings
 
@@ -59,8 +67,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     register_error_handlers(app)
 
-    api = APIRouter(prefix=settings.api_prefix)
+    # Every endpoint can answer 422 / 500 in the standard error format.
+    api = APIRouter(prefix=settings.api_prefix, responses=error_responses(422, 500))
     api.include_router(health.router)
+    if settings.jobs_api_enabled:
+        api.include_router(jobs.router)
     app.include_router(api)
 
     return app

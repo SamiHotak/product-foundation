@@ -15,6 +15,9 @@ const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   reactStrictMode: true,
+  // Dev server only: Playwright in Docker opens the app as http://frontend:3000
+  // (make e2e, CI). Next.js blocks dev resources for unknown hosts by default.
+  allowedDevOrigins: ["frontend"],
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${apiUrl}/api/:path*` }];
   },

@@ -4,6 +4,8 @@
 #   API docs           http://localhost:8000/api/docs
 #   Mailpit (emails)   http://localhost:8025
 #
+# `make e2e` also starts the `e2e` service (profile "e2e"): Playwright in Docker.
+#
 # Local S3 file storage is added in phase 4B (when file uploads are built).
 # Code folders are mounted, so saving a file reloads the backend, worker and frontend.
 # Dev-only passwords below are fine locally. Production uses real secrets (phase 5).
@@ -70,6 +72,10 @@ services:
 
   backend:
     <<: *backend-base
+    volumes:
+      - ../backend:/app
+      # `make api-client` writes the OpenAPI schema here for the frontend.
+      - ../frontend/lib/api:/frontend-api
     # Apply migrations, then start the API with auto-reload.
     command: >
       sh -c "alembic upgrade head &&
@@ -118,9 +124,41 @@ services:
       # Keep Linux node_modules and the build cache inside Docker, not on Windows.
       - /app/node_modules
       - /app/.next
+    # Healthy = Next.js answers AND its /api proxy reaches FastAPI.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
     depends_on:
       backend:
         condition: service_healthy
+
+  # End-to-end tests (Playwright). Not started by `make dev`; run with `make e2e`.
+  e2e:
+    profiles: ["e2e"]
+    build:
+      context: ../frontend
+      target: e2e
+    image: foundation-frontend:e2e
+    environment:
+      PLAYWRIGHT_BASE_URL: http://frontend:3000
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+    ipc: host # Chromium needs more shared memory than Docker's default
+    depends_on:
+      frontend:
+        condition: service_healthy
+      worker:
+        condition: service_started
 
 volumes:
   postgres-data:

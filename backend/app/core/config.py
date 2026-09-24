@@ -52,12 +52,18 @@ class Settings(BaseSettings):
     # Timeouts for health checks (seconds)
     health_check_timeout: float = 2.0
 
+    # Jobs API. On by default in development/test. Off in production until phase 2
+    # protects it with login + organization scoping (an open queue invites abuse).
+    jobs_api_enabled: bool | None = None
+
     @model_validator(mode="after")
     def _fill_defaults_and_check(self) -> "Settings":
         if self.celery_broker_url is None:
             self.celery_broker_url = self.redis_url
         if self.celery_result_backend is None:
             self.celery_result_backend = self.redis_url
+        if self.jobs_api_enabled is None:
+            self.jobs_api_enabled = self.environment is not Environment.PRODUCTION
         if (
             self.environment is Environment.PRODUCTION
             and self.secret_key.get_secret_value() == DEV_SECRET_KEY

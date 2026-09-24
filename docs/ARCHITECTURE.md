@@ -42,7 +42,42 @@ Rule: no business logic in routers. Services raise `AppError` subclasses
 - **Request id**: accepted from the proxy if well-formed, otherwise generated; returned in the `X-Request-ID` header and in every error.
 - **Health**: `GET /api/health` (process alive) and `GET /api/health/ready` (Postgres + Redis reachable; 503 if not). Error text from failing checks never reaches the client.
 - **Database**: async engine for the API, sync engine for Celery and Alembic (both psycopg 3). Schema changes only through Alembic migrations.
-- **Background jobs**: tasks retry temporary errors with backoff, are acknowledged only after finishing (a crashed worker's task runs again), and report progress. Phase 1B stores job status in the database for a live UI.
+- **Background jobs**: see below.
+- **API contract**: the OpenAPI schema is exported to `frontend/lib/api/openapi.json` and turned into
+  TypeScript types (`schema.d.ts`). Every error response is typed with the standard envelope.
+  Operation ids are the Python function names. CI fails if the committed files are out of date.
+
+## Background jobs
+
+```
+UI ──POST /api/jobs/example──► JobService ──1. insert row (queued), COMMIT
+                                          └─2. send Celery task (task id = job id)
+Worker (JobTask base class):
+  before_start  -> running, attempts + 1
+  report.progress(pct, msg) from the task body
+  on_retry      -> queued, "Retrying (attempt n of m)"   (TemporaryError, exponential backoff)
+  on_success    -> done, progress 100, result
+  on_failure    -> failed, SAFE error text (JobFailedError message, else a generic text + job id)
+UI ──GET /api/jobs (or /api/jobs/{id}) every 1 s while a job is queued/running, then stops.
+```
+
+- The row is committed **before** the task is sent, so a fast worker always finds it.
+- If Redis is down, sending fails in well under a second; the job is marked failed and the API returns 503.
+- Celery keeps no results (`task_ignore_result`); Postgres is the single source of truth.
+- Tasks are acknowledged after they finish, so a crashed worker's job runs again (`attempts` shows it).
+- Polling instead of Server-Sent Events: simpler, works through every proxy, and costs one small
+  request per second only while a job is active.
+- Until phase 2 adds login + organizations, the jobs router is only mounted when
+  `JOBS_API_ENABLED` is true (default: not in production). Phase 2 adds `organization_id`.
+
+## Quality gates
+
+| Where | What |
+| --- | --- |
+| `git commit` | pre-commit: whitespace, line endings, YAML/JSON/TOML, private keys, ruff |
+| CI backend | ruff, mypy (strict), `alembic upgrade` + `alembic check` + downgrade/upgrade, pytest with real Postgres + Redis, coverage >= 80 %, OpenAPI file up to date |
+| CI frontend | generated client up to date, eslint, tsc, prettier, `next build` |
+| CI e2e | the full `make dev` stack in Docker + Playwright in Docker (desktop + phone) |
 
 ## Frontend
 
@@ -50,13 +85,17 @@ Rule: no business logic in routers. Services raise `AppError` subclasses
 - `app/(app)` — the logged-in app inside `AppShell` (sidebar, top bar, main sheet)
 - `components/ui` — design-system primitives (button, dropdown menu, sheet, skeleton, empty state)
 - `config/product.ts` — per-product identity: name, monogram, accent colour, navigation
+- `lib/api` — generated types + typed client (`api`, `unwrap`, `ApiError`)
+- `hooks/use-jobs.ts` — `useRecentJobs`, `useJob`: live job status by polling
+- `components/jobs` — `JobProgress` (reusable job status row) and the dashboard jobs panel
+- `tests/e2e` — Playwright tests (run in Docker: `make e2e`)
 - Design tokens live in `app/globals.css` as CSS variables, with a dark-mode set.
 
 ## Planned by phase
 
 | Phase | Adds |
 | --- | --- |
-| 1B | generated typed API client, job status table + live UI, CI, pre-commit |
+| 1B | generated typed API client, job status table + live UI, CI, pre-commit (done) |
 | 2 | users, organizations, roles, invites, API keys, audit log, GDPR export/delete |
 | 3 | full design system, settings pages, theming, marketing site, legal pages |
 | 4 | Stripe billing + usage limits, files, emails, LLM gateway, admin, demo mode |

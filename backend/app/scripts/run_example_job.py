@@ -1,30 +1,40 @@
-"""Send the example task to the Celery worker and print its progress.
+"""Start the example job and print its progress from the database.
 
-Proves that Redis, the worker and task results all work.
+Proves that Postgres, Redis, the worker and the job status table all work together.
 Run: python -m app.scripts.run_example_job   (or: make example-job)
 """
 
 import time
 
-from app.workers.tasks import example_task
+from app.db.session import sync_session
+from app.repositories.jobs import SyncJobRepository
+from app.workers.dispatch import send_job
 
 
 def main(steps: int = 5, timeout_seconds: float = 60.0) -> None:
-    """Queue the task, poll its state, print progress until it finishes."""
-    result = example_task.delay(steps=steps, delay_seconds=1.0)
-    print(f"Queued example task {result.id}")
+    """Create a job row, queue the task, poll the row until it finishes."""
+    params = {"steps": steps, "fail": False}
+    with sync_session() as session:
+        job_id = SyncJobRepository(session).create(kind="example", params=params).id
+    send_job(job_id, "example", params)
+    print(f"Queued example job {job_id}")
+
     deadline = time.monotonic() + timeout_seconds
-    last = None
-    while not result.ready():
+    last: tuple[str, int] | None = None
+    while True:
+        with sync_session() as session:
+            job = SyncJobRepository(session).get(job_id)
+            assert job is not None
+            state = (job.status.value, job.progress)
+            if state != last:
+                print(f"  {job.status.value:<8} {job.progress:>3}%  {job.message or ''}")
+                last = state
+            if job.status.is_finished:
+                print(f"Finished: {job.status.value}. {job.error or job.result}")
+                return
         if time.monotonic() > deadline:
             raise SystemExit("Timed out. Is the worker running? Check: make logs s=worker")
-        info = result.info if isinstance(result.info, dict) else {}
-        progress = info.get("progress", 0)
-        if progress != last:
-            print(f"  {result.state:<8} {progress:>3}%")
-            last = progress
         time.sleep(0.3)
-    print(f"Done: {result.get(timeout=5)}")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 # Frontend image. Targets:
 #   dev  -> deploy/docker-compose.dev.yml (code mounted, hot reload)
 #   prod -> production (phase 5): standalone Next.js server, non-root
+#   e2e  -> Playwright tests in Docker (make e2e, CI). No Node needed on Windows.
 
 FROM node:24-alpine AS base
 WORKDIR /app
@@ -31,3 +32,15 @@ COPY --from=build --chown=app:app /app/public ./public
 USER app
 EXPOSE 3000
 CMD ["node", "server.js"]
+
+# Playwright image: Chromium + all system libraries. Its version MUST match
+# @playwright/test in package.json (update both together).
+FROM mcr.microsoft.com/playwright:v1.63.0-noble AS e2e
+WORKDIR /app
+ENV CI=1 NEXT_TELEMETRY_DISABLED=1
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --no-audit --no-fund --fetch-retries=10 --fetch-retry-mintimeout=20000 \
+    --fetch-retry-maxtimeout=120000 --fetch-timeout=600000
+COPY . .
+CMD ["npx", "playwright", "test"]

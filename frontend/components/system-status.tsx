@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusDot } from "@/components/ui/status-dot";
-import { ApiError, apiGet, type ReadinessResponse } from "@/lib/api";
+import { api, NETWORK_ERROR_MESSAGE, type ReadinessResponse } from "@/lib/api";
 
 const LABELS: Record<string, string> = { database: "Database", redis: "Redis (queue and cache)" };
 
@@ -23,17 +23,22 @@ export function SystemStatus() {
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
-      const data = await apiGet<ReadinessResponse>("/health/ready", {
-        cache: "no-store",
-        acceptStatuses: [503],
+      const { data, error, response } = await api.GET("/api/health/ready", { cache: "no-store" });
+      // 503 still carries a useful report (which dependency is down).
+      const report = data ?? (response.status === 503 ? (error as ReadinessResponse) : null);
+      if (report) {
+        setState({ kind: "ready", data: report, checkedAt: new Date() });
+      } else {
+        setState({
+          kind: "failed",
+          message: `The API answered with an error (${response.status}). Check the backend logs: make logs`,
+        });
+      }
+    } catch {
+      setState({
+        kind: "failed",
+        message: `${NETWORK_ERROR_MESSAGE} Start everything with: make dev`,
       });
-      setState({ kind: "ready", data, checkedAt: new Date() });
-    } catch (err) {
-      const message =
-        err instanceof ApiError && err.status !== 0
-          ? `The API answered with an error (${err.status}). Check the backend logs: make logs`
-          : "The API is not reachable. Start it with: make dev";
-      setState({ kind: "failed", message });
     } finally {
       setRefreshing(false);
     }
