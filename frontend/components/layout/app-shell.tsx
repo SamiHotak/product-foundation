@@ -1,3 +1,4 @@
+import { DeletionBanner } from "@/components/layout/deletion-banner";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/top-bar";
 
@@ -18,6 +19,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col lg:py-2 lg:pr-2">
         <div className="flex flex-1 flex-col bg-surface lg:rounded-sheet lg:border lg:border-line">
           <TopBar />
+          <DeletionBanner />
           <main id="main" className="flex-1 px-4 py-6 sm:px-8 sm:py-8">
             {children}
           </main>

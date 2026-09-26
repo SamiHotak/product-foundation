@@ -86,6 +86,57 @@ Locally they go to Mailpit; phase 4A adds a real provider.
 when signed out (no flash of the app). Forms read their values from the DOM on submit, so text
 typed before the page finished loading is kept.
 
+## Teams, API keys, audit log, GDPR (phase 2B)
+
+**New tables:** `invites`, `api_keys`, `audit_logs`, `data_exports`; `users.deletion_scheduled_at`
+and `organizations.deletion_scheduled_at` (migration `0004`).
+
+**Permissions** live in ONE file: `backend/app/core/permissions.py`.
+
+| Permission | member | admin | owner |
+| --- | :-: | :-: | :-: |
+| see members, use the product (`members:read`, `jobs:*`) | ✓ | ✓ | ✓ |
+| invite, change roles, remove (`members:invite`, `members:manage`) | | ✓ | ✓ |
+| rename workspace, API keys, audit log, workspace export | | ✓ | ✓ |
+| delete workspace, transfer ownership | | | ✓ |
+
+- Backend: `ctx: Annotated[OrgContext, require(Permission.X)]` in a route → 403 otherwise.
+  Services check again (`ctx.require(...)`), so a service can't be called without the check.
+- Frontend: `/api/auth/me` returns `permissions`; `useSession().can("members:invite")` hides
+  what you can't use. Hiding is only comfort: the API decides.
+- Always exactly one owner. Admins never change or remove the owner. Nobody changes their own
+  role. The owner can't leave (transfer first). Every change locks the workspace row first.
+
+**Invites:** random 256-bit link token (only the hash is stored), 7 days, single use, one open
+invite per email and workspace (a new one replaces the old). Only the account with the invited
+email can accept. Creating an account from an invite needs no confirmation email (the link
+proves the inbox). 30 invites per workspace per hour.
+
+**API keys** (public REST API): `Authorization: Bearer pf_...`. SHA-256 hash stored, shown once.
+A key belongs to the workspace and has *scopes* — a subset of the permissions
+(`API_KEY_SCOPES`: today `jobs:read`, `jobs:write`). Keys can never manage the team or keys.
+600 requests per minute per key, `last_used_at` written at most once a minute, optional expiry,
+revoke at any time. Endpoints open to keys use `allow_api_keys(Permission.X)` instead of `require`.
+
+**Audit log:** `AuditService.record(...)` in the SAME transaction as the change. Workspace events
+are shown to owners/admins (Settings → Audit log, paged with a cursor, filter by area). Sign-ins and
+password resets are account events (`organization_id` NULL): in the user's own export, not in
+any workspace log. Never secrets in `details`. Kept 365 days.
+
+**GDPR:**
+
+| What | How |
+| --- | --- |
+| Export my data | `POST /api/account/exports` → background job `data_export` builds a ZIP (JSON per section, no secrets) → download for 7 days. Private job: only you see it |
+| Export workspace | `POST /api/organizations/current/exports` (owner/admin). Same flow |
+| Delete my account | type your email → deleted after 14 days (cancel any time before). Blocked while you own a workspace with other people |
+| Delete workspace | owner, type the name → deleted after 14 days. Everyone sees a banner |
+| Nightly (beat) | `purge_deleted` deletes what is due; `cleanup_data` removes expired ZIPs and old audit events |
+
+Products add their own data to exports by adding a section to `ACCOUNT_SECTIONS` /
+`ORG_SECTIONS` in `app/services/export_builder.py`. ZIPs are stored in Postgres for now (small);
+phase 4B moves them to S3.
+
 ## Background jobs
 
 ```
@@ -141,7 +192,7 @@ UI ──GET /api/jobs (or /api/jobs/{id}) every 1 s while a job is queued/runni
 | --- | --- |
 | 1B | generated typed API client, job status table + live UI, CI, pre-commit (done) |
 | 2A | accounts, email verification, password reset, Google, sessions, brute-force protection, workspaces (done) |
-| 2B | invites, role permissions, member management, API keys, audit log, GDPR export/delete |
+| 2B | invites, role permissions, member management, API keys, audit log, GDPR export/delete (done) |
 | 3 | full design system, settings pages, theming, marketing site, legal pages |
 | 4 | Stripe billing + usage limits, files, emails, LLM gateway, admin, demo mode |
 | 5 | production deployment on Hetzner, backups, monitoring |

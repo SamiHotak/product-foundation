@@ -34,6 +34,10 @@ class SessionRepository:
         """Sign out one browser."""
         await self._session.execute(delete(UserSession).where(UserSession.id == session_id))
 
+    async def commit(self) -> None:
+        """Commit the current transaction."""
+        await self._session.commit()
+
     async def delete_all_for_user(self, user_id: uuid.UUID) -> None:
         """Sign out everywhere (after a password reset)."""
         await self._session.execute(delete(UserSession).where(UserSession.user_id == user_id))

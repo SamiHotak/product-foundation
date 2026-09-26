@@ -8,4 +8,9 @@ To add a job to a product:
 
 JOB_TASKS: dict[str, str] = {
     "example": "app.workers.tasks.example_task",
+    "data_export": "app.workers.tasks.data_export",
 }
+
+# Jobs only the person who started them can see (not the rest of the workspace,
+# and not API keys). Use it for personal things like "export my data".
+PRIVATE_JOB_KINDS: frozenset[str] = frozenset({"data_export"})

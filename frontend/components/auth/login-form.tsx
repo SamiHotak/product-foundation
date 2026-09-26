@@ -10,16 +10,12 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { api, ApiError, errorMessage, unwrap } from "@/lib/api";
+import { safeNext } from "@/lib/safe-next";
 
 const URL_ERRORS: Record<string, string> = {
   google: "Signing in with Google didn't work. Try again, or use your email.",
   google_disabled: "Google sign-in is not set up for this app yet.",
 };
-
-/** Only allow redirects inside this app (never to another website). */
-function safeNext(next: string | null): string {
-  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
-}
 
 export function LoginForm() {
   const router = useRouter();

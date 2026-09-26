@@ -151,6 +151,7 @@ test("auth pages load without console errors", async ({ page }) => {
     "/forgot-password",
     "/verify-email?email=a%40b.co",
     "/reset-password",
+    `/invite?token=${"x".repeat(40)}`, // a broken invite link shows a clear message
   ]) {
     await page.goto(path);
     await page.waitForLoadState("networkidle");

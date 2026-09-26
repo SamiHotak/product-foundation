@@ -26,3 +26,15 @@ test("phone: sign-in page fits the screen", async ({ page }) => {
   );
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+test("phone: settings pages fit the screen", async ({ page }) => {
+  await signUpAndSignIn(page);
+  for (const path of ["/settings/workspace", "/settings/api-keys", "/settings/privacy"]) {
+    await page.goto(path);
+    await expect(page.getByRole("navigation", { name: "Settings" })).toBeVisible();
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, path).toBeLessThanOrEqual(0);
+  }
+});

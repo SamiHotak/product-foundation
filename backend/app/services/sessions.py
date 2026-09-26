@@ -59,6 +59,10 @@ class SessionService:
             user_session.expires_at = now + self._lifetime
         return user_session
 
+    async def commit(self) -> None:
+        """Save the new or changed session."""
+        await self._repo.commit()
+
     async def end(self, user_session: UserSession) -> None:
         """Sign out this browser."""
         await self._repo.delete(user_session.id)

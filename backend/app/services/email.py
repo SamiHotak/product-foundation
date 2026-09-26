@@ -134,3 +134,67 @@ def password_reset_email(
         html=_html([escape(f"Hi {name},"), escape(lines[0])], ("Choose a new password", url))
         + _html([escape(lines[1])]),
     )
+
+
+def invite_email(
+    *,
+    to: str,
+    inviter_name: str,
+    organization_name: str,
+    role: str,
+    url: str,
+    app_name: str,
+    days: int,
+) -> EmailMessage:
+    """Someone invited this address to join a workspace."""
+    lines = [
+        f"{inviter_name} invited you to join the workspace “{organization_name}” on {app_name} "
+        f"as {'an' if role == 'admin' else 'a'} {role}.",
+        f"The link works for {days} days. If you don't know {inviter_name}, ignore this email.",
+    ]
+    return EmailMessage(
+        to=to,
+        subject=f"{inviter_name} invited you to {organization_name} on {app_name}",
+        text=f"Hi,\n\n{lines[0]}\n\nAccept the invite: {url}\n\n{lines[1]}\n",
+        html=_html(["Hi,", escape(lines[0])], ("Accept invite", url)) + _html([escape(lines[1])]),
+    )
+
+
+def account_deletion_email(
+    *, to: str, name: str, when: str, settings_url: str, app_name: str
+) -> EmailMessage:
+    """Confirms that the account will be deleted, and how to stop it."""
+    lines = [
+        f"your {app_name} account and all its personal data will be deleted on {when}.",
+        "Changed your mind? Sign in before then and cancel it under Settings → Privacy.",
+        "If you did not ask for this, sign in now, cancel it and change your password.",
+    ]
+    return EmailMessage(
+        to=to,
+        subject=f"Your {app_name} account will be deleted on {when}",
+        text=f"Hi {name},\n\n{lines[0]}\n\n{lines[1]}\n{settings_url}\n\n{lines[2]}\n",
+        html=_html(
+            [escape(f"Hi {name},"), escape(lines[0]), escape(lines[1])],
+            ("Open privacy settings", settings_url),
+        )
+        + _html([escape(lines[2])]),
+    )
+
+
+def workspace_deletion_email(
+    *, to: str, name: str, organization_name: str, when: str, settings_url: str, app_name: str
+) -> EmailMessage:
+    """Tells the owner the workspace will be deleted, and how to stop it."""
+    lines = [
+        f"the workspace “{organization_name}” and all its data will be deleted on {when}.",
+        "Changed your mind? Cancel it before then under Settings → Privacy.",
+    ]
+    return EmailMessage(
+        to=to,
+        subject=f"“{organization_name}” will be deleted on {when}",
+        text=f"Hi {name},\n\n{lines[0]}\n\n{lines[1]}\n{settings_url}\n",
+        html=_html(
+            [escape(f"Hi {name},"), escape(lines[0]), escape(lines[1])],
+            ("Open privacy settings", settings_url),
+        ),
+    )

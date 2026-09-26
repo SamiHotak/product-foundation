@@ -17,7 +17,16 @@ from app.workers.jobs import JobFailedError, JobTask, TemporaryError, make_repor
 
 logger = get_logger(__name__)
 
-__all__ = ["TemporaryError", "cleanup_auth", "example_task", "heartbeat", "send_email"]
+__all__ = [
+    "TemporaryError",
+    "cleanup_auth",
+    "cleanup_data",
+    "data_export",
+    "example_task",
+    "heartbeat",
+    "purge_deleted",
+    "send_email",
+]
 
 
 @celery_app.task(  # type: ignore[untyped-decorator]
@@ -119,4 +128,73 @@ def cleanup_auth() -> dict[str, int]:
         "tokens": int(getattr(tokens, "rowcount", 0)),
     }
     logger.info("cleanup_auth", **counts)
+    return counts
+
+
+@celery_app.task(  # type: ignore[untyped-decorator]
+    bind=True,
+    base=JobTask,
+    name="app.workers.tasks.data_export",
+    autoretry_for=(TemporaryError,),
+    retry_backoff=True,
+    max_retries=3,
+)
+def data_export(self: Any, job_id: str, export_id: str) -> dict[str, Any]:
+    """Build a GDPR export ZIP and store it. The UI then shows a download link."""
+    import uuid
+
+    from app.db.session import sync_session
+    from app.repositories.exports import SyncExportReader
+    from app.services.export_builder import build_zip
+
+    report = make_reporter(job_id)
+    report.progress(5, "Collecting your data")
+    with sync_session() as session:
+        reader = SyncExportReader(session)
+        export = reader.get_export(uuid.UUID(export_id))
+        if export is None:
+            raise JobFailedError("This export was deleted before it was ready.")
+        content = build_zip(
+            reader,
+            export,
+            app_name=get_settings().app_name,
+            progress=lambda pct, msg: report.progress(pct, msg),
+        )
+        reader.save_content(export, content)
+        filename = export.filename
+    size_kb = max(1, round(len(content) / 1024))
+    return {
+        "export_id": export_id,
+        "size_bytes": len(content),
+        "message": f"Your export is ready ({filename}, {size_kb} KB).",
+    }
+
+
+@celery_app.task(name="app.workers.tasks.purge_deleted")  # type: ignore[untyped-decorator]
+def purge_deleted() -> dict[str, int]:
+    """Nightly: delete accounts and workspaces whose deletion date has passed (GDPR)."""
+    from datetime import UTC, datetime
+
+    from app.db.session import sync_session
+    from app.services.purge import purge_due
+
+    counts = purge_due(sync_session, datetime.now(UTC))
+    logger.info("purge_deleted", **counts)
+    return counts
+
+
+@celery_app.task(name="app.workers.tasks.cleanup_data")  # type: ignore[untyped-decorator]
+def cleanup_data() -> dict[str, int]:
+    """Nightly: remove expired export files and audit events past their retention."""
+    from datetime import UTC, datetime
+
+    from app.db.session import sync_session
+    from app.services.purge import cleanup
+
+    counts = cleanup(
+        sync_session,
+        datetime.now(UTC),
+        audit_retention_days=get_settings().audit_retention_days,
+    )
+    logger.info("cleanup_data", **counts)
     return counts

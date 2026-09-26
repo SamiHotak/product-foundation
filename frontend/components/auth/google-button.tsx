@@ -1,9 +1,15 @@
-/** "Continue with Google": a full page navigation to the backend, which redirects to Google. */
-export function GoogleButton() {
+/**
+ * "Continue with Google": a full page navigation to the backend, which redirects to Google.
+ * `next`: where to come back to afterwards (a path in this app, e.g. the invite page).
+ */
+export function GoogleButton({ next, divider = true }: { next?: string; divider?: boolean }) {
+  const href = next
+    ? `/api/auth/google/start?next=${encodeURIComponent(next)}`
+    : "/api/auth/google/start";
   return (
     <>
       <a
-        href="/api/auth/google/start"
+        href={href}
         className="flex h-10 w-full items-center justify-center gap-2.5 rounded-control border border-line-strong bg-surface text-sm font-medium hover:bg-surface-sunken"
       >
         <svg viewBox="0 0 48 48" className="size-4" aria-hidden="true">
@@ -26,11 +32,13 @@ export function GoogleButton() {
         </svg>
         Continue with Google
       </a>
-      <div className="my-5 flex items-center gap-3 text-xs text-ink-muted">
-        <span className="h-px flex-1 bg-line" />
-        or use your email
-        <span className="h-px flex-1 bg-line" />
-      </div>
+      {divider && (
+        <div className="my-5 flex items-center gap-3 text-xs text-ink-muted">
+          <span className="h-px flex-1 bg-line" />
+          or use your email
+          <span className="h-px flex-1 bg-line" />
+        </div>
+      )}
     </>
   );
 }

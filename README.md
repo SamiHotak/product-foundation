@@ -4,7 +4,7 @@ A reusable SaaS starter: FastAPI + Postgres + Redis + Celery backend, Next.js fr
 Every product (AskDocs, LeadPilot, InvoiceAI Pro, CountVision) is created from this repo
 with GitHub's **Use this template** button.
 
-**Status:** phase 2A — accounts (email + Google), email verification, password reset, secure sessions, brute-force protection, workspaces with a switcher. Built on phase 1: app shell, typed API client, background jobs, CI.
+**Status:** phase 2B — team invites, roles (owner / admin / member), member management, API keys for the REST API, audit log, GDPR export and deletion. Built on 2A (accounts, Google sign-in, sessions, workspaces) and phase 1 (app shell, typed API client, background jobs, CI).
 
 ## What's inside
 
@@ -109,6 +109,37 @@ The "Continue with Google" button appears only after you add your keys.
    ```
    This file is private: it is in `.gitignore` and never goes to GitHub. Never paste these keys into a chat.
 5. `make restart s=backend` — the button appears on the sign-in page.
+
+## Your team (invites and roles)
+
+**Settings → Workspace**: invite people by email as *member* or *admin*. The email lands in
+Mailpit (http://localhost:8025). Open the link in another browser (or a private window):
+a new person creates an account right there; an existing user signs in and clicks **Join**.
+
+| Role | Can |
+| --- | --- |
+| Member | use the product, see the team |
+| Admin | + invite, change roles, remove people, API keys, audit log, export workspace data |
+| Owner | + delete the workspace, make someone else the owner (one owner per workspace) |
+
+The rules are in one file: `backend/app/core/permissions.py`.
+
+## API keys (the public REST API)
+
+**Settings → API keys** → **Create key**. Copy it right away: it is shown only once.
+
+```powershell
+curl.exe -H "Authorization: Bearer pf_YOUR_KEY" http://localhost:3000/api/jobs
+```
+
+A key only does what its scopes allow (`jobs:read`, `jobs:write`). It can never manage the team
+or other keys. Revoke it in the same page; it stops working immediately.
+
+## Privacy (GDPR)
+
+**Settings → Privacy**: download a ZIP of your data (or the whole workspace, for admins), delete
+your account, or delete the workspace (owner). Deleting waits 14 days, so it can be cancelled; a
+nightly job (Celery beat) deletes what is due. Every team change is in **Settings → Audit log**.
 
 ## Everyday commands
 
@@ -231,6 +262,15 @@ step-by-step trace of the failing test. Check that `make dev` is running and the
 **"Too many requests" while testing** — the brute-force protection. Wait a minute. Locally the limit is 300 auth requests per minute per IP (production: 20), and 5 wrong passwords lock that email for 15 minutes.
 
 **The confirmation email doesn't arrive** — open http://localhost:8025. Still nothing? `make logs s=worker` (the worker sends emails).
+
+**"You don't have permission to do this"** — your role doesn't allow it. Ask the owner or an admin
+(Settings → Workspace shows who they are).
+
+**An invite link says "not valid any more"** — it was used, cancelled, replaced by a newer invite,
+or is older than 7 days. Ask for a new one (Settings → Workspace → **Send again**).
+
+**The invite says it is for another email** — you are signed in with a different account. Click
+**Sign out and continue as ...** on the invite page.
 
 **Something is badly broken** — `make clean` then `make dev` (this deletes your local database).
 

@@ -44,12 +44,30 @@ class FakeJobStore:
         self.jobs[job.id] = job
         return job
 
-    async def get(self, job_id: uuid.UUID, *, organization_id: uuid.UUID) -> Job | None:
-        job = self.jobs.get(job_id)
-        return job if job is not None and job.organization_id == organization_id else None
+    @staticmethod
+    def _visible(job: Job, viewer_id: uuid.UUID | None) -> bool:
+        from app.workers.registry import PRIVATE_JOB_KINDS
 
-    async def list_recent(self, *, organization_id: uuid.UUID, limit: int) -> list[Job]:
-        mine = [j for j in self.jobs.values() if j.organization_id == organization_id]
+        return job.kind not in PRIVATE_JOB_KINDS or (
+            viewer_id is not None and job.created_by_id == viewer_id
+        )
+
+    async def get(
+        self, job_id: uuid.UUID, *, organization_id: uuid.UUID, viewer_id: uuid.UUID | None
+    ) -> Job | None:
+        job = self.jobs.get(job_id)
+        if job is None or job.organization_id != organization_id:
+            return None
+        return job if self._visible(job, viewer_id) else None
+
+    async def list_recent(
+        self, *, organization_id: uuid.UUID, viewer_id: uuid.UUID | None, limit: int
+    ) -> list[Job]:
+        mine = [
+            j
+            for j in self.jobs.values()
+            if j.organization_id == organization_id and self._visible(j, viewer_id)
+        ]
         return sorted(mine, key=lambda j: j.created_at, reverse=True)[:limit]
 
     async def mark_failed(self, job: Job, error: str) -> None:

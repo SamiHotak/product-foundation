@@ -1,15 +1,14 @@
 import type { Metadata } from "next";
 
-import { PageHeader } from "@/components/page-header";
+import { Section } from "@/components/settings/section";
 import { ProfileSummary } from "@/components/settings/profile-summary";
 
 export const metadata: Metadata = { title: "Settings" };
 
 export default function SettingsPage() {
   return (
-    <>
-      <PageHeader title="Settings" description="Your account and workspace." />
+    <Section title="Profile" description="Changing your name and email arrives in a later update.">
       <ProfileSummary />
-    </>
+    </Section>
   );
 }

@@ -24,6 +24,7 @@ const STATUS: Record<
 /** Names people understand for each job kind. Products add their own kinds here. */
 const KIND_LABELS: Record<string, string> = {
   example: "Example job",
+  data_export: "Data export",
 };
 
 export function jobTitle(job: Pick<Job, "kind">): string {

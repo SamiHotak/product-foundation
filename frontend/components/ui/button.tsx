@@ -13,6 +13,8 @@ const buttonVariants = cva(
         secondary: "border border-line-strong bg-surface text-ink hover:bg-surface-sunken",
         ghost: "text-ink-muted hover:bg-surface-sunken hover:text-ink",
         danger: "bg-danger text-white hover:bg-danger/90",
+        // A way into something destructive (the final "are you sure" uses `danger`).
+        "danger-outline": "border border-danger/40 bg-surface text-danger hover:bg-danger/5",
       },
       size: {
         sm: "h-8 px-3",

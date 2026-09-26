@@ -60,6 +60,8 @@ type ClientResult = { data?: unknown; error?: unknown; response: Response };
  * Await a client call and return its data, or throw an ApiError.
  *
  *   const job = await unwrap(api.GET("/api/jobs/{job_id}", { params: { path: { job_id } } }));
+ *
+ * "204 No Content" (e.g. DELETE) is a success without a body: it resolves to undefined.
  */
 export async function unwrap<T extends ClientResult>(
   request: Promise<T>,
@@ -72,6 +74,10 @@ export async function unwrap<T extends ClientResult>(
   }
   if (result.response.ok && result.data !== undefined) {
     return result.data as NonNullable<T["data"]>;
+  }
+  if (result.response.status === 204) {
+    // The generated type for a 204 response has no data; nothing to return.
+    return undefined as unknown as NonNullable<T["data"]>;
   }
   throw toApiError(result.response.status, result.error);
 }

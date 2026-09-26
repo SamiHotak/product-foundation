@@ -81,6 +81,19 @@ class Settings(BaseSettings):
     google_client_id: str | None = None
     google_client_secret: SecretStr | None = None
 
+    # Invites
+    invite_days: int = 7  # how long an invite link works
+    invites_per_org_per_hour: int = 30  # stops a workspace from being used to spam inboxes
+
+    # API keys (public REST API). Keys look like "<prefix>_<random>".
+    api_key_prefix: str = "pf"
+    api_key_requests_per_minute: int = 600
+
+    # GDPR: deleting an account or workspace waits this many days (can be cancelled).
+    deletion_grace_days: int = 14
+    export_retention_days: int = 7  # data export ZIPs are deleted after this
+    audit_retention_days: int = 365  # audit log entries older than this are deleted
+
     @model_validator(mode="after")
     def _fill_defaults_and_check(self) -> "Settings":
         if self.celery_broker_url is None:

@@ -17,7 +17,17 @@ from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestContextMiddleware
 from app.db.session import get_async_engine
-from app.routers import auth, health, jobs, organizations
+from app.routers import (
+    api_keys,
+    audit,
+    auth,
+    health,
+    invites,
+    jobs,
+    members,
+    organizations,
+    users,
+)
 from app.schemas.errors import error_responses
 
 logger = get_logger(__name__)
@@ -77,7 +87,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api = APIRouter(prefix=settings.api_prefix, responses=error_responses(422, 500))
     api.include_router(health.router)
     api.include_router(auth.router)
+    api.include_router(users.router)
     api.include_router(organizations.router)
+    api.include_router(members.router)
+    api.include_router(invites.router)
+    api.include_router(api_keys.router)
+    api.include_router(audit.router)
     api.include_router(jobs.router)
     app.include_router(api)
 

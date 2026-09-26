@@ -60,20 +60,29 @@ class JobService:
         return job
 
     async def start_example(
-        self, data: ExampleJobCreate, *, organization_id: uuid.UUID, user_id: uuid.UUID
+        self, data: ExampleJobCreate, *, organization_id: uuid.UUID, user_id: uuid.UUID | None
     ) -> Job:
-        """Start the example job in this organization."""
+        """Start the example job in this organization (user_id is None for API keys)."""
         return await self.enqueue(
             "example", data.model_dump(), organization_id=organization_id, created_by_id=user_id
         )
 
-    async def get(self, job_id: uuid.UUID, *, organization_id: uuid.UUID) -> Job:
-        """Return one job of this organization or raise NotFoundError."""
-        job = await self._store.get(job_id, organization_id=organization_id)
+    async def get(
+        self, job_id: uuid.UUID, *, organization_id: uuid.UUID, viewer_id: uuid.UUID | None = None
+    ) -> Job:
+        """Return one job of this organization or raise NotFoundError.
+
+        `viewer_id`: the person asking (None for API keys). Private jobs of others stay hidden.
+        """
+        job = await self._store.get(job_id, organization_id=organization_id, viewer_id=viewer_id)
         if job is None:
             raise NotFoundError("This job does not exist.")
         return job
 
-    async def list_recent(self, *, organization_id: uuid.UUID, limit: int = 20) -> list[Job]:
-        """Newest jobs of this organization first."""
-        return await self._store.list_recent(organization_id=organization_id, limit=limit)
+    async def list_recent(
+        self, *, organization_id: uuid.UUID, viewer_id: uuid.UUID | None = None, limit: int = 20
+    ) -> list[Job]:
+        """Newest jobs of this organization first (private jobs only for their starter)."""
+        return await self._store.list_recent(
+            organization_id=organization_id, viewer_id=viewer_id, limit=limit
+        )

@@ -1,5 +1,6 @@
 """Helpers for integration tests: a real app on the test database with fake outside services."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -9,7 +10,7 @@ from fastapi import Depends, FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.rate_limit import MemoryRateLimiter, get_rate_limiter
 from app.db.session import get_db
 from app.main import create_app
@@ -18,6 +19,7 @@ from app.repositories.jobs import JobRepository
 from app.routers.deps import get_email_sender, get_google_client
 from app.routers.jobs import get_job_service
 from app.services.jobs import JobService
+from app.workers.registry import JOB_TASKS
 from tests.fakes import FakeEmailSender, FakeGoogleClient
 
 PASSWORD = "correct horse battery"
@@ -51,6 +53,46 @@ class World:
         )
         assert res.status_code == 202, res.text
         res = await c.post("/api/auth/verify-email", json={"token": self.email.link_token(email)})
+        assert res.status_code == 200, res.text
+        body: dict[str, Any] = res.json()
+        return body
+
+    def settings(self, **changes: Any) -> Settings:
+        """Use changed settings for the rest of the test (e.g. lower limits)."""
+        changed = get_settings().model_copy(update=changes)
+        self.app.dependency_overrides[get_settings] = lambda: changed
+        return changed
+
+    async def run_jobs(self) -> None:
+        """Run every queued job now, in-process, with the real worker code and database."""
+        import app.workers.tasks  # noqa: F401 - registers the tasks
+        from app.workers.celery_app import celery_app
+
+        pending, self.dispatched[:] = list(self.dispatched), []
+        for job in pending:
+            task = celery_app.tasks[JOB_TASKS[job.kind]]
+            kwargs: dict[str, Any] = {"job_id": str(job.id), **job.params}
+            if job.kind == "example":
+                kwargs["delay_seconds"] = 0
+            await asyncio.to_thread(task.apply, kwargs=kwargs, task_id=str(job.id))
+
+    async def invite_and_join(
+        self,
+        inviter: AsyncClient,
+        invitee: AsyncClient,
+        email: str,
+        role: str = "member",
+        name: str = "New Person",
+    ) -> dict[str, Any]:
+        """Invite `email` and let `invitee` (signed out) create an account from the link."""
+        res = await inviter.post(
+            "/api/organizations/current/invites", json={"email": email, "role": role}
+        )
+        assert res.status_code == 201, res.text
+        res = await invitee.post(
+            "/api/invites/signup",
+            json={"token": self.email.link_token(email), "name": name, "password": PASSWORD},
+        )
         assert res.status_code == 200, res.text
         body: dict[str, Any] = res.json()
         return body

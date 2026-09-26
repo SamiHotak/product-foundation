@@ -7,7 +7,8 @@ import "server-only";
 import createClient from "openapi-fetch";
 import { cookies } from "next/headers";
 
-import type { AuthProviders, Me } from "./index";
+import { toApiError } from "./client";
+import type { AuthProviders, InvitePreview, Me } from "./index";
 import type { paths } from "./schema";
 
 const apiUrl = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
@@ -38,5 +39,21 @@ export async function getProviders(): Promise<AuthProviders> {
     return data ?? { password: true, google: false };
   } catch {
     return { password: true, google: false };
+  }
+}
+
+/** What an invite link is for, or the message to show when it doesn't work. */
+export async function getInvitePreview(
+  token: string,
+): Promise<{ preview: InvitePreview } | { error: string }> {
+  if (!token) return { error: "This link is incomplete. Open it again from the email." };
+  try {
+    const { data, error, response } = await (
+      await serverClient()
+    ).POST("/api/invites/preview", { body: { token } });
+    if (data) return { preview: data };
+    return { error: toApiError(response.status, error).message };
+  } catch {
+    return { error: "Can't reach the server right now. Try again in a minute." };
   }
 }

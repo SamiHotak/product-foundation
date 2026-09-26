@@ -1,31 +1,26 @@
 """Background job endpoints. The UI polls `GET /jobs/{id}` for live status.
 
-Signed-in users only; everything is scoped to the active workspace.
+Part of the public REST API: signed-in people OR API keys (scopes `jobs:read` /
+`jobs:write`). Everything is scoped to the caller's workspace.
 """
 
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Query, status
 
-from app.db.session import get_db
-from app.repositories.jobs import JobRepository
-from app.routers.deps import OrgCtx
+from app.core.permissions import Permission
+from app.routers.deps import Jobs, allow_api_keys, get_job_service
 from app.schemas.errors import error_responses
 from app.schemas.jobs import ExampleJobCreate, JobList, JobRead
-from app.services.jobs import JobService
-from app.workers.dispatch import celery_dispatch
+from app.services.organizations import Caller
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
+__all__ = ["get_job_service", "router"]  # tests override get_job_service from here
 
-def get_job_service(session: Annotated[AsyncSession, Depends(get_db)]) -> JobService:
-    """Dependency that builds the job service (overridden in tests)."""
-    return JobService(JobRepository(session), celery_dispatch)
-
-
-Service = Annotated[JobService, Depends(get_job_service)]
+CanRead = Annotated[Caller, allow_api_keys(Permission.JOBS_READ)]
+CanWrite = Annotated[Caller, allow_api_keys(Permission.JOBS_WRITE)]
 
 
 @router.post(
@@ -33,24 +28,28 @@ Service = Annotated[JobService, Depends(get_job_service)]
     response_model=JobRead,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Start the example job",
-    responses=error_responses(401, 503),
+    responses=error_responses(401, 403, 429, 503),
 )
-async def create_example_job(data: ExampleJobCreate, ctx: OrgCtx, service: Service) -> JobRead:
+async def create_example_job(data: ExampleJobCreate, caller: CanWrite, service: Jobs) -> JobRead:
     """Queue the example job. Poll `GET /jobs/{id}` to follow its progress."""
     job = await service.start_example(
-        data, organization_id=ctx.organization.id, user_id=ctx.user.id
+        data, organization_id=caller.organization.id, user_id=caller.user_id
     )
     return JobRead.model_validate(job)
 
 
-@router.get("", response_model=JobList, responses=error_responses(401), summary="List recent jobs")
+@router.get(
+    "", response_model=JobList, responses=error_responses(401, 403, 429), summary="List recent jobs"
+)
 async def list_jobs(
-    ctx: OrgCtx,
-    service: Service,
+    caller: CanRead,
+    service: Jobs,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> JobList:
-    """Newest jobs of the active workspace first."""
-    jobs = await service.list_recent(organization_id=ctx.organization.id, limit=limit)
+    """Newest jobs of the workspace first."""
+    jobs = await service.list_recent(
+        organization_id=caller.organization.id, viewer_id=caller.user_id, limit=limit
+    )
     return JobList(items=[JobRead.model_validate(job) for job in jobs])
 
 
@@ -58,8 +57,11 @@ async def list_jobs(
     "/{job_id}",
     response_model=JobRead,
     summary="Get one job",
-    responses=error_responses(401, 404),
+    responses=error_responses(401, 403, 404, 429),
 )
-async def get_job(job_id: uuid.UUID, ctx: OrgCtx, service: Service) -> JobRead:
+async def get_job(job_id: uuid.UUID, caller: CanRead, service: Jobs) -> JobRead:
     """Current status and progress of one job (404 for other workspaces' jobs)."""
-    return JobRead.model_validate(await service.get(job_id, organization_id=ctx.organization.id))
+    job = await service.get(
+        job_id, organization_id=caller.organization.id, viewer_id=caller.user_id
+    )
+    return JobRead.model_validate(job)

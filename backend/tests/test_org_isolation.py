@@ -66,12 +66,71 @@ async def test_jobs_follow_the_active_workspace(world: World) -> None:
     assert world.dispatched[0].organization_id != uuid.UUID(second["id"])
 
 
+async def test_team_data_stays_in_its_workspace(world: World) -> None:
+    async with world.client() as alice, world.client() as bob, world.client() as carl:
+        me_a = await world.signup_and_verify(alice, "alice@example.com", "Alice")
+        await world.signup_and_verify(bob, "bob@example.com", "Bob")
+        await world.invite_and_join(alice, carl, "carl@example.com", name="Carl")
+        carl_id = (await carl.get("/api/auth/me")).json()["user"]["id"]
+        await alice.post("/api/organizations/current/invites", json={"email": "d@example.com"})
+        invite_id = (await alice.get("/api/organizations/current/invites")).json()["items"][0]["id"]
+
+        # Bob (owner of his own workspace) sees none of Alice's team ...
+        members = (await bob.get("/api/organizations/current/members")).json()["items"]
+        assert [m["email"] for m in members] == ["bob@example.com"]
+        assert (await bob.get("/api/organizations/current/invites")).json()["items"] == []
+        # ... and can't touch it, even with the right ids: they "don't exist" for him.
+        member_url = f"/api/organizations/current/members/{carl_id}"
+        assert (await bob.patch(member_url, json={"role": "admin"})).status_code == 404
+        assert (await bob.delete(member_url)).status_code == 404
+        invite_url = f"/api/organizations/current/invites/{invite_id}"
+        assert (await bob.delete(invite_url)).status_code == 404
+        assert (await bob.post(f"{invite_url}/resend")).status_code == 404
+        transfer = await bob.post(
+            "/api/organizations/current/transfer-ownership", json={"user_id": carl_id}
+        )
+        assert transfer.status_code == 404
+
+        # Nothing changed for Alice.
+        roles = {
+            m["email"]: m["role"]
+            for m in (await alice.get("/api/organizations/current/members")).json()["items"]
+        }
+        assert roles == {"alice@example.com": "owner", "carl@example.com": "member"}
+        assert len((await alice.get("/api/organizations/current/invites")).json()["items"]) == 1
+        assert me_a["active_organization_id"] in [
+            o["id"] for o in (await carl.get("/api/auth/me")).json()["organizations"]
+        ]
+
+
 @pytest.mark.parametrize(
     ("method", "path"),
     [
         ("GET", "/api/auth/me"),
         ("GET", "/api/organizations"),
         ("POST", "/api/organizations"),
+        ("PATCH", "/api/organizations/current"),
+        ("POST", "/api/organizations/current/leave"),
+        ("POST", "/api/organizations/current/transfer-ownership"),
+        ("POST", "/api/organizations/current/deletion"),
+        ("DELETE", "/api/organizations/current/deletion"),
+        ("POST", "/api/organizations/current/exports"),
+        ("GET", "/api/organizations/current/members"),
+        ("PATCH", f"/api/organizations/current/members/{uuid.uuid4()}"),
+        ("DELETE", f"/api/organizations/current/members/{uuid.uuid4()}"),
+        ("GET", "/api/organizations/current/invites"),
+        ("POST", "/api/organizations/current/invites"),
+        ("DELETE", f"/api/organizations/current/invites/{uuid.uuid4()}"),
+        ("POST", "/api/invites/accept"),
+        ("GET", "/api/organizations/current/api-keys"),
+        ("POST", "/api/organizations/current/api-keys"),
+        ("DELETE", f"/api/organizations/current/api-keys/{uuid.uuid4()}"),
+        ("GET", "/api/organizations/current/audit-log"),
+        ("POST", "/api/account/deletion"),
+        ("DELETE", "/api/account/deletion"),
+        ("POST", "/api/account/exports"),
+        ("GET", "/api/exports"),
+        ("GET", f"/api/exports/{uuid.uuid4()}/download"),
         ("GET", "/api/jobs"),
         ("POST", "/api/jobs/example"),
         ("GET", f"/api/jobs/{uuid.uuid4()}"),
@@ -80,7 +139,20 @@ async def test_jobs_follow_the_active_workspace(world: World) -> None:
 )
 async def test_everything_needs_sign_in(world: World, method: str, path: str) -> None:
     async with world.client() as c:
-        body = {"name": "x", "organization_id": str(uuid.uuid4())} if method != "GET" else None
+        body = (
+            {
+                "name": "x",
+                "organization_id": str(uuid.uuid4()),
+                "user_id": str(uuid.uuid4()),
+                "email": "x@example.com",
+                "role": "member",
+                "token": "t" * 40,
+                "confirm": "x",
+                "scopes": ["jobs:read"],
+            }
+            if method not in ("GET", "DELETE")
+            else None
+        )
         res = await c.request(method, path, json=body)
     assert res.status_code == 401, (method, path, res.status_code)
     assert res.json()["error"]["code"] == "unauthorized"

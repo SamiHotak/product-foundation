@@ -34,8 +34,10 @@ from app.repositories.auth_tokens import AuthTokenRepository
 from app.repositories.organizations import OrganizationRepository
 from app.repositories.users import UserRepository
 from app.services import email as emails
+from app.services.audit import AuditAction, AuditService
 from app.services.email import EmailSender
 from app.services.google_oauth import GoogleProfile
+from app.services.organizations import workspace_name
 from app.services.sessions import utcnow
 
 logger = get_logger(__name__)
@@ -72,12 +74,6 @@ class GoogleSignInError(AppError):
     code = "google_sign_in_failed"
 
 
-def workspace_name(name: str) -> str:
-    """Default name for the first workspace: "Ezat's workspace"."""
-    first = name.split()[0] if name.split() else "My"
-    return f"{first}'s workspace"[:80]
-
-
 def _email_key(email: str) -> str:
     return email.strip().lower()
 
@@ -91,11 +87,13 @@ class AuthService:
         settings: Settings,
         email_sender: EmailSender,
         limiter: RateLimiter,
+        audit: AuditService,
     ) -> None:
         self._db = db
         self._settings = settings
         self._email = email_sender
         self._limiter = limiter
+        self._audit = audit
         self.users = UserRepository(db)
         self.orgs = OrganizationRepository(db)
         self.tokens = AuthTokenRepository(db)
@@ -158,7 +156,23 @@ class AuthService:
 
     async def _create_user_with_workspace(self, user: User) -> Organization:
         await self.users.add(user)
-        return await self.orgs.create(name=workspace_name(user.name), owner_id=user.id)
+        org = await self.orgs.create(name=workspace_name(user.name), owner_id=user.id)
+        await self._audit.record(
+            AuditAction.ORG_CREATED,
+            organization_id=org.id,
+            actor_user_id=user.id,
+            details={"name": org.name},
+        )
+        return org
+
+    async def _record_login(self, user: User, method: str) -> None:
+        """An account event (no workspace): part of the user's own data export."""
+        await self._audit.record(
+            AuditAction.AUTH_LOGIN,
+            organization_id=None,
+            actor_user_id=user.id,
+            details={"method": method},
+        )
 
     # --- flows ---------------------------------------------------------------------------
 
@@ -204,6 +218,7 @@ class AuthService:
         if user.email_verified_at is None:
             user.email_verified_at = utcnow()
         user.last_login_at = utcnow()
+        await self._record_login(user, "email_link")
         await self._db.commit()
         logger.info("email_verified", user_id=str(user.id))
         return user
@@ -234,6 +249,7 @@ class AuthService:
         if user.password_hash and password_needs_rehash(user.password_hash):
             user.password_hash = hash_password(password)
         user.last_login_at = utcnow()
+        await self._record_login(user, "password")
         await self._db.commit()
         logger.info("login", user_id=str(user.id))
         return user
@@ -267,6 +283,9 @@ class AuthService:
             user.email_verified_at = utcnow()
         user.last_login_at = utcnow()
         await self._limiter.reset(f"login-fail:{_email_key(user.email)}")
+        await self._audit.record(
+            AuditAction.AUTH_PASSWORD_RESET, organization_id=None, actor_user_id=user.id
+        )
         await self._db.commit()
         logger.info("password_reset", user_id=str(user.id))
         return user
@@ -298,6 +317,7 @@ class AuthService:
         if user.email_verified_at is None:
             user.email_verified_at = utcnow()
         user.last_login_at = utcnow()
+        await self._record_login(user, "google")
         await self._db.commit()
         logger.info("google_login", user_id=str(user.id))
         return user, end_other_sessions

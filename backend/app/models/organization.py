@@ -1,16 +1,17 @@
 """Organizations (workspaces) and who belongs to them."""
 
 import uuid
+from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Enum, ForeignKey, String, UniqueConstraint
+from sqlalchemy import DateTime, Enum, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class Role(StrEnum):
-    """What a member may do. Permission checks arrive in phase 2B."""
+    """What a member may do. The rules live in app/core/permissions.py."""
 
     OWNER = "owner"
     ADMIN = "admin"
@@ -24,6 +25,8 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __mapper_args__ = {"eager_defaults": True}  # noqa: RUF012
 
     name: Mapped[str] = mapped_column(String(80))
+    # GDPR: the owner asked to delete the workspace; the nightly job deletes it after this.
+    deletion_scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Membership(UUIDPrimaryKeyMixin, TimestampMixin, Base):

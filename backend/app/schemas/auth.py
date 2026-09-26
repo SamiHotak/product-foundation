@@ -5,6 +5,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from app.core.permissions import Permission
 from app.models.organization import Role
 
 PASSWORD_MIN = 10
@@ -79,6 +80,9 @@ class UserRead(BaseModel):
     has_password: bool
     google_linked: bool
     created_at: datetime
+    deletion_scheduled_at: datetime | None = Field(
+        default=None, description="Set when the account will be deleted (can be cancelled)."
+    )
 
 
 class OrganizationRead(BaseModel):
@@ -87,6 +91,9 @@ class OrganizationRead(BaseModel):
     id: uuid.UUID
     name: str
     role: Role
+    deletion_scheduled_at: datetime | None = Field(
+        default=None, description="Set when the workspace will be deleted (can be cancelled)."
+    )
 
 
 class MeResponse(BaseModel):
@@ -95,6 +102,9 @@ class MeResponse(BaseModel):
     user: UserRead
     organizations: list[OrganizationRead]
     active_organization_id: uuid.UUID
+    permissions: list[Permission] = Field(
+        description="What you may do in the active workspace (the UI hides everything else)."
+    )
 
 
 class OrganizationCreate(_Strict):

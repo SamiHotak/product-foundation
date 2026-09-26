@@ -46,6 +46,16 @@ celery_app.conf.update(
             "task": "app.workers.tasks.cleanup_auth",
             "schedule": crontab(hour=3, minute=17),
         },
+        # GDPR: delete accounts / workspaces whose grace period ended.
+        "purge-deleted-nightly": {
+            "task": "app.workers.tasks.purge_deleted",
+            "schedule": crontab(hour=3, minute=27),
+        },
+        # Expired export ZIPs and audit events past their retention.
+        "cleanup-data-nightly": {
+            "task": "app.workers.tasks.cleanup_data",
+            "schedule": crontab(hour=3, minute=37),
+        },
     },
 )
 

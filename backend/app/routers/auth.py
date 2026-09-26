@@ -1,6 +1,7 @@
 """Auth endpoints. Thin: rate-limit, call AuthService, manage the session cookie."""
 
 import secrets
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
@@ -46,6 +47,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 CHECK_EMAIL = "If the details are right, we sent you an email. Check your inbox (and spam folder)."
 GOOGLE_COOKIE = "google_oauth"
+GOOGLE_NEXT_COOKIE = "google_next"
 
 
 async def limit_per_ip(
@@ -66,21 +68,25 @@ async def limit_per_ip(
 RateLimited = [Depends(limit_per_ip)]
 
 
-async def _start_session(
+async def start_session(
     request: Request,
     response: Response,
     user: User,
     sessions: SessionService,
     orgs: OrganizationService,
     settings: Settings,
+    *,
+    organization_id: uuid.UUID | None = None,
 ) -> MeResponse:
+    """Sign the user in (new cookie) and return /me. Opens `organization_id` if given."""
     token, user_session = await sessions.create(
         user_id=user.id,
-        organization_id=None,
+        organization_id=organization_id,
         ip=client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
-    me = await orgs.me(user, user_session)  # commits (sets the active workspace)
+    me = await orgs.me(user, user_session)
+    await sessions.commit()  # the cookie is only useful once the session row is saved
     set_session_cookie(response, token, settings)
     return me
 
@@ -137,7 +143,7 @@ async def verify_email(
 ) -> MeResponse:
     """Uses the token from the email link, then starts a session."""
     user = await auth.verify_email(data.token)
-    return await _start_session(request, response, user, sessions, orgs, settings)
+    return await start_session(request, response, user, sessions, orgs, settings)
 
 
 @router.post(
@@ -158,7 +164,7 @@ async def login(
 ) -> MeResponse:
     """Starts a new session (a new cookie every time)."""
     user = await auth.login(email=str(data.email), password=data.password)
-    return await _start_session(request, response, user, sessions, orgs, settings)
+    return await start_session(request, response, user, sessions, orgs, settings)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, summary="Sign out")
@@ -206,7 +212,7 @@ async def reset_password(
     """Old sessions end: if someone else was signed in, they are out now."""
     user = await auth.reset_password(token=data.token, password=data.password)
     await sessions.end_all(user.id)
-    return await _start_session(request, response, user, sessions, orgs, settings)
+    return await start_session(request, response, user, sessions, orgs, settings)
 
 
 @router.get("/me", response_model=MeResponse, responses=error_responses(401), summary="Who am I")
@@ -236,10 +242,20 @@ def _google_redirect_uri(settings: Settings) -> str:
     return f"{settings.app_url}/api/auth/google/callback"
 
 
+def safe_next(path: str | None) -> str | None:
+    """Only paths inside this app (never another website) are allowed after sign-in."""
+    if not path or len(path) > 500 or not path.startswith("/") or path.startswith("//"):
+        return None
+    if "\\" in path or any(ord(c) < 32 for c in path):
+        return None
+    return path
+
+
 @router.get("/google/start", include_in_schema=False, dependencies=RateLimited)
 async def google_start(
     settings: AppSettings,
     google: Annotated[GoogleClient | None, Depends(get_google_client)],
+    next: Annotated[str | None, Query(max_length=500)] = None,
 ) -> RedirectResponse:
     """Send the browser to Google's account chooser."""
     if google is None:
@@ -262,6 +278,16 @@ async def google_start(
         samesite="lax",
         path="/api/auth/google",
     )
+    if target := safe_next(next):  # e.g. back to the invite page after signing in
+        response.set_cookie(
+            GOOGLE_NEXT_COOKIE,
+            target,
+            max_age=600,
+            httponly=True,
+            secure=bool(settings.session_cookie_secure),
+            samesite="lax",
+            path="/api/auth/google",
+        )
     return response
 
 
@@ -295,7 +321,9 @@ async def google_callback(
         return failed
     if end_others:
         await sessions.end_all(user.id)
-    response = RedirectResponse("/dashboard", status_code=status.HTTP_303_SEE_OTHER)
-    await _start_session(request, response, user, sessions, orgs, settings)
+    target = safe_next(request.cookies.get(GOOGLE_NEXT_COOKIE)) or "/dashboard"
+    response = RedirectResponse(target, status_code=status.HTTP_303_SEE_OTHER)
+    await start_session(request, response, user, sessions, orgs, settings)
     response.delete_cookie(GOOGLE_COOKIE, path="/api/auth/google")
+    response.delete_cookie(GOOGLE_NEXT_COOKIE, path="/api/auth/google")
     return response

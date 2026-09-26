@@ -24,6 +24,9 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # GDPR: set when the user asks to delete the account; the nightly job deletes it
+    # after this time. Clearing it cancels the deletion.
+    deletion_scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     @property
     def is_verified(self) -> bool:

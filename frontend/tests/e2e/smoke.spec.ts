@@ -85,7 +85,15 @@ test("pages load without console errors, in light and dark mode", async ({ page 
   const errors = collectErrors(page);
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
-    for (const path of ["/", "/dashboard", "/settings"]) {
+    for (const path of [
+      "/",
+      "/dashboard",
+      "/settings",
+      "/settings/workspace",
+      "/settings/api-keys",
+      "/settings/audit-log",
+      "/settings/privacy",
+    ]) {
       await page.goto(path);
       await page.waitForLoadState("networkidle");
       // "Same as device" (the default) follows the device with CSS only.

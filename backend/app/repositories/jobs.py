@@ -8,15 +8,22 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.models.job import Job, JobStatus, new_job_id
+from app.workers.registry import PRIVATE_JOB_KINDS
 
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _visible_to(viewer_id: uuid.UUID | None) -> ColumnElement[bool]:
+    """Private job kinds are visible only to the person who started them."""
+    public = Job.kind.not_in(PRIVATE_JOB_KINDS)
+    return public if viewer_id is None else or_(public, Job.created_by_id == viewer_id)
 
 
 class JobStore(Protocol):
@@ -33,12 +40,16 @@ class JobStore(Protocol):
         """Insert a queued job."""
         ...
 
-    async def get(self, job_id: uuid.UUID, *, organization_id: uuid.UUID) -> Job | None:
-        """Return one job of this organization, or None."""
+    async def get(
+        self, job_id: uuid.UUID, *, organization_id: uuid.UUID, viewer_id: uuid.UUID | None
+    ) -> Job | None:
+        """Return one job of this organization that the viewer may see, or None."""
         ...
 
-    async def list_recent(self, *, organization_id: uuid.UUID, limit: int) -> list[Job]:
-        """Newest jobs of this organization first."""
+    async def list_recent(
+        self, *, organization_id: uuid.UUID, viewer_id: uuid.UUID | None, limit: int
+    ) -> list[Job]:
+        """Newest jobs of this organization first (that the viewer may see)."""
         ...
 
     async def mark_failed(self, job: Job, error: str) -> None:
@@ -80,20 +91,24 @@ class JobRepository:
         await self._session.flush()
         return job
 
-    async def get(self, job_id: uuid.UUID, *, organization_id: uuid.UUID) -> Job | None:
+    async def get(
+        self, job_id: uuid.UUID, *, organization_id: uuid.UUID, viewer_id: uuid.UUID | None
+    ) -> Job | None:
         """Return one job of this organization, or None (other orgs' jobs "don't exist")."""
         found: Job | None = await self._session.scalar(
             select(Job)
-            .where(Job.id == job_id, Job.organization_id == organization_id)
+            .where(Job.id == job_id, Job.organization_id == organization_id, _visible_to(viewer_id))
             .execution_options(populate_existing=True)
         )
         return found
 
-    async def list_recent(self, *, organization_id: uuid.UUID, limit: int) -> list[Job]:
-        """Newest jobs of this organization first."""
+    async def list_recent(
+        self, *, organization_id: uuid.UUID, viewer_id: uuid.UUID | None, limit: int
+    ) -> list[Job]:
+        """Newest jobs of this organization first (that the viewer may see)."""
         rows = await self._session.scalars(
             select(Job)
-            .where(Job.organization_id == organization_id)
+            .where(Job.organization_id == organization_id, _visible_to(viewer_id))
             .order_by(Job.created_at.desc(), Job.id.desc())
             .limit(limit)
         )

@@ -7,13 +7,13 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from app.models.organization import Membership, Organization, Role
-from app.models.session import UserSession
+from app.core.permissions import role_permissions
+from app.models.organization import Organization
 from app.models.user import User
-from app.routers.deps import get_org_context
+from app.routers.deps import get_caller
 from app.routers.jobs import get_job_service
 from app.services.jobs import JobService
-from app.services.organizations import OrgContext
+from app.services.organizations import Caller
 from tests.fakes import FakeDispatcher, FakeJobStore
 
 
@@ -30,15 +30,12 @@ def dispatcher() -> FakeDispatcher:
 ORG_ID = uuid.uuid4()
 
 
-def fake_context() -> OrgContext:
-    """A signed-in user in one workspace (the real sign-in is tested in test_auth_flows)."""
-    user = User(id=uuid.uuid4(), email="a@example.com", name="A")
-    org = Organization(id=ORG_ID, name="A's workspace")
-    return OrgContext(
-        user=user,
-        session=UserSession(user_id=user.id),
-        organization=org,
-        membership=Membership(organization_id=org.id, user_id=user.id, role=Role.OWNER),
+def fake_context() -> Caller:
+    """A signed-in owner in one workspace (the real sign-in is tested in test_auth_flows)."""
+    return Caller(
+        organization=Organization(id=ORG_ID, name="A's workspace"),
+        permissions=role_permissions("owner"),
+        user=User(id=uuid.uuid4(), email="a@example.com", name="A"),
     )
 
 
@@ -47,7 +44,7 @@ async def jobs_client(
     app: FastAPI, store: FakeJobStore, dispatcher: FakeDispatcher
 ) -> AsyncIterator[AsyncClient]:
     app.dependency_overrides[get_job_service] = lambda: JobService(store, dispatcher)
-    app.dependency_overrides[get_org_context] = fake_context
+    app.dependency_overrides[get_caller] = fake_context
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
@@ -75,7 +72,7 @@ async def test_create_example_job_validates_input(jobs_client: AsyncClient) -> N
 
 async def test_queue_down_returns_503_in_standard_format(app: FastAPI, store: FakeJobStore) -> None:
     app.dependency_overrides[get_job_service] = lambda: JobService(store, FakeDispatcher(fail=True))
-    app.dependency_overrides[get_org_context] = fake_context
+    app.dependency_overrides[get_caller] = fake_context
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         res = await c.post("/api/jobs/example", json={})

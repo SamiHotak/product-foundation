@@ -108,3 +108,29 @@ def test_task_without_job_id_skips_reporting(reporter: FakeReporter) -> None:
 def test_beat_schedule_has_heartbeat() -> None:
     schedule = celery_app.conf.beat_schedule
     assert schedule["heartbeat-every-5-minutes"]["task"] == "app.workers.tasks.heartbeat"
+
+
+def test_data_export_for_a_deleted_export_fails_clearly(
+    reporter: FakeReporter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.workers import tasks
+
+    class _Reader:
+        def __init__(self, session: Any) -> None: ...
+
+        def get_export(self, export_id: Any) -> None:
+            return None
+
+    class _Session:
+        def __enter__(self) -> "_Session":
+            return self
+
+        def __exit__(self, *args: Any) -> None: ...
+
+    monkeypatch.setattr("app.db.session.sync_session", lambda: _Session())
+    monkeypatch.setattr("app.repositories.exports.SyncExportReader", _Reader)
+    outcome = tasks.data_export.apply(
+        kwargs={"job_id": JOB_ID, "export_id": "22222222-3333-4444-5555-666666666666"}
+    )
+    assert outcome.failed()
+    assert reporter.events[-1] == ("failed", "This export was deleted before it was ready.")

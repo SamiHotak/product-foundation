@@ -380,3 +380,20 @@ async def test_create_and_switch_workspace(world: World) -> None:
         assert {o["name"] for o in me["organizations"]} == {"Ezat's workspace", "Client project"}
         res = await c.put("/api/auth/session/organization", json={"organization_id": first})
         assert res.status_code == 200 and res.json()["active_organization_id"] == first
+
+
+async def test_google_returns_to_a_safe_next_page(world: World) -> None:
+    """E.g. "Continue with Google" on the invite page comes back to the invite page."""
+    profile = GoogleProfile(sub="g-2", email="n@example.com", email_verified=True, name="N")
+    async with world.client() as c:
+        world.google.profile = profile
+        start = await c.get("/api/auth/google/start?next=/invite%3Ftoken%3Dabc")
+        state = start.headers["location"].split("state=")[1].split("&")[0]
+        res = await c.get(f"/api/auth/google/callback?code=abc&state={state}")
+        assert res.headers["location"] == "/invite?token=abc"
+    async with world.client() as c:
+        start = await c.get("/api/auth/google/start?next=//evil.example")
+        assert "google_next" not in start.headers.get("set-cookie", "")
+        state = start.headers["location"].split("state=")[1].split("&")[0]
+        res = await c.get(f"/api/auth/google/callback?code=abc&state={state}")
+        assert res.headers["location"] == "/dashboard"
