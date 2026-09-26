@@ -1,8 +1,22 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* Dark mode is driven by the `dark` class on <html> (set by next-themes). */
-@custom-variant dark (&:where(.dark, .dark *));
+/*
+ * Dark mode, with no JavaScript before the first paint (see lib/theme.ts):
+ *   <html class="dark">   -> dark (user picked Dark)
+ *   <html class="light">  -> light (user picked Light)
+ *   <html> (no class)     -> follows the device setting (user picked "Same as device")
+ */
+@custom-variant dark {
+  &:where(.dark, .dark *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not(.light), :root:not(.light) *) {
+      @slot;
+    }
+  }
+}
 
 /*
  * Design tokens.
@@ -26,6 +40,7 @@
   --ring: color-mix(in oklab, var(--accent) 55%, transparent);
 }
 
+/* Dark tokens. Keep both blocks identical: one for "Dark", one for "Same as device". */
 .dark {
   --canvas: #0d1220;
   --surface: #141a29;
@@ -40,6 +55,24 @@
   --success: #4cc38a;
   --warning: #e0a43c;
   --danger: #f07171;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --canvas: #0d1220;
+    --surface: #141a29;
+    --surface-sunken: #1a2133;
+    --ink: #e4e8f1;
+    --ink-muted: #97a1b6;
+    --line: #252d40;
+    --line-strong: #344058;
+    --accent: var(--brand-dark, #86a4f4);
+    --accent-ink: #0d1220;
+    --accent-soft: color-mix(in oklab, var(--accent) 14%, var(--surface));
+    --success: #4cc38a;
+    --warning: #e0a43c;
+    --danger: #f07171;
+  }
 }
 
 @theme inline {
@@ -80,6 +113,11 @@
   }
   html.dark {
     color-scheme: dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    html:not(.light) {
+      color-scheme: dark;
+    }
   }
   body {
     background: var(--canvas);

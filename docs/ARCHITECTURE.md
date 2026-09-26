@@ -90,6 +90,12 @@ UI ──GET /api/jobs (or /api/jobs/{id}) every 1 s while a job is queued/runni
 - `components/jobs` — `JobProgress` (reusable job status row) and the dashboard jobs panel
 - `tests/e2e` — Playwright tests (run in Docker: `make e2e`)
 - Design tokens live in `app/globals.css` as CSS variables, with a dark-mode set.
+- Theme (light / dark / same as device): `lib/theme.ts`, `components/theme-provider.tsx`, `app/globals.css`.
+  No script runs before the first paint. "Same as device" = no class on `<html>`, CSS follows
+  `prefers-color-scheme`. "Light"/"Dark" are saved in a `theme` cookie and the server renders
+  `<html class="dark">`, so there is no flash. Never render a `<script>` or `<style>` tag through React (the product accent is a `style` on `<html>`): when a
+  browser extension changes the page, React re-renders it on the client and logs an error.
+  E2E tests cover console errors, the extension case, and the saved theme.
 
 ## Planned by phase
 

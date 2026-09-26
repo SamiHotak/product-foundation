@@ -2,7 +2,8 @@
 
 import { Monitor, Moon, Settings, Sun } from "lucide-react";
 import Link from "next/link";
-import { useTheme } from "next-themes";
+
+import type { Theme } from "@/lib/theme";
 
 import {
   DropdownMenu,
@@ -14,6 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useTheme } from "@/components/theme-provider";
 
 /** Avatar menu: theme choice and settings. Phase 2 adds the signed-in user and "Log out". */
 export function UserMenu() {
@@ -30,7 +32,7 @@ export function UserMenu() {
         <DropdownMenuLabel>Guest (sign-in arrives in phase 2)</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuLabel>Theme</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={theme ?? "system"} onValueChange={setTheme}>
+        <DropdownMenuRadioGroup value={theme} onValueChange={(value) => setTheme(value as Theme)}>
           <DropdownMenuRadioItem value="light">
             <Sun />
             Light

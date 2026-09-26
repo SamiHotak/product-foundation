@@ -2,9 +2,11 @@ import "@fontsource-variable/hanken-grotesk";
 import "./globals.css";
 
 import type { Metadata, Viewport } from "next";
+import { cookies } from "next/headers";
 
 import { ThemeProvider } from "@/components/theme-provider";
 import { product } from "@/config/product";
+import { parseTheme, THEME_COOKIE, themeClass } from "@/lib/theme";
 
 export const metadata: Metadata = {
   title: { default: product.name, template: `%s · ${product.name}` },
@@ -18,18 +20,23 @@ export const viewport: Viewport = {
   ],
 };
 
-// The product accent from config/product.ts becomes a CSS variable used by every component.
-const brandCss = `:root{--brand:${product.accent.light};--brand-dark:${product.accent.dark};}`;
+// The product accent from config/product.ts becomes CSS variables used by every component.
+// Set as a style on <html>, not a <style> tag in <head>: browser extensions often inject
+// their own tags into <head>, and React would report a mismatch with ours.
+const brandVars = {
+  "--brand": product.accent.light,
+  "--brand-dark": product.accent.dark,
+} as React.CSSProperties;
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Saved theme choice. Reading a cookie renders pages per request (needed so dark mode
+  // is correct on the very first paint, without any script).
+  const theme = parseTheme((await cookies()).get(THEME_COOKIE)?.value);
   return (
-    // suppressHydrationWarning: next-themes sets the class on <html> before React loads.
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        <style>{brandCss}</style>
-      </head>
-      <body>
-        <ThemeProvider>{children}</ThemeProvider>
+    // suppressHydrationWarning: <html> and <body> are often changed by browser extensions.
+    <html lang="en" className={themeClass(theme)} style={brandVars} suppressHydrationWarning>
+      <body suppressHydrationWarning>
+        <ThemeProvider initialTheme={theme}>{children}</ThemeProvider>
       </body>
     </html>
   );

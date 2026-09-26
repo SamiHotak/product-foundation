@@ -57,3 +57,89 @@ test("a failing job shows a clear error", async ({ page }) => {
   await expect(row).toHaveAttribute("data-job-status", "failed", { timeout: 45_000 });
   await expect(row).toContainText("Stopped at step 3 of 4 because you asked it to fail.");
 });
+
+const DARK_BG = "rgb(13, 18, 32)"; // --canvas in dark mode
+const LIGHT_BG = "rgb(241, 243, 246)"; // --canvas in light mode
+
+function collectErrors(page: import("@playwright/test").Page): string[] {
+  const errors: string[] = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error") errors.push(msg.text());
+  });
+  page.on("pageerror", (err) => errors.push(err.message));
+  return errors;
+}
+
+async function background(page: import("@playwright/test").Page): Promise<string> {
+  return page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+}
+
+test("pages load without console errors, in light and dark mode", async ({ page }) => {
+  const errors = collectErrors(page);
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    for (const path of ["/", "/dashboard", "/settings"]) {
+      await page.goto(path);
+      await page.waitForLoadState("networkidle");
+      // "Same as device" (the default) follows the device with CSS only.
+      expect(await background(page)).toBe(scheme === "dark" ? DARK_BG : LIGHT_BG);
+    }
+  }
+  expect(errors).toEqual([]);
+});
+
+test("no errors when a browser extension changes the page", async ({ page }) => {
+  // Extensions (password managers, translators, ...) edit the page before React loads.
+  // React then re-renders on the client; that must not cause any errors.
+  await page.addInitScript(() => {
+    document.addEventListener("DOMContentLoaded", () => {
+      // Seen on a real machine: an extension adds a <style> at the top of <head>.
+      const style = document.createElement("style");
+      style.textContent = "body[unresolved] { opacity: 0; }";
+      document.head.prepend(style);
+      document.body.prepend(document.createTextNode(" "));
+      document.body.setAttribute("data-extension", "1");
+      document.documentElement.setAttribute("data-extension", "1");
+    });
+  });
+  const errors = collectErrors(page);
+  await page.goto("/dashboard");
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
+  // React always reports that the extension changed the HTML (a "hydration" warning);
+  // that one is expected. Anything else (like "Encountered a script tag") is our bug.
+  const ours = errors.filter((e) => !/hydrat/i.test(e));
+  expect(ours).toEqual([]);
+  // Our product accent color still applies (it lives on <html>, not in <head>).
+  const accent = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue("--brand").trim(),
+  );
+  expect(accent.toLowerCase()).toBe("#244ba6");
+  // The page still works after React re-renders it.
+  await expect(
+    page.getByRole("region", { name: "Background jobs" }).getByRole("button", {
+      name: "Run example job",
+    }),
+  ).toBeEnabled();
+});
+
+test("the theme choice is saved and correct on the first paint", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto("/dashboard");
+  await page.getByRole("button", { name: "Open user menu" }).click();
+  await page.getByRole("menuitemradio", { name: "Dark" }).click();
+  expect(await background(page)).toBe(DARK_BG);
+
+  // After a reload the server sends dark HTML straight away (no white flash).
+  const html = await (await page.request.get("/dashboard")).text();
+  expect(html).toMatch(/<html[^>]*class="dark"/);
+  await page.reload();
+  expect(await background(page)).toBe(DARK_BG);
+
+  // Back to "Same as device": follows the device again.
+  await page.getByRole("button", { name: "Open user menu" }).click();
+  await page.getByRole("menuitemradio", { name: "Same as device" }).click();
+  expect(await background(page)).toBe(LIGHT_BG);
+  await page.emulateMedia({ colorScheme: "dark" });
+  expect(await background(page)).toBe(DARK_BG);
+});
