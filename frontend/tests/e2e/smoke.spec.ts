@@ -1,15 +1,22 @@
 import { expect, test } from "@playwright/test";
 
+import { signUpAndSignIn } from "./helpers";
+
+// Every test here uses the app, so each starts with a fresh signed-in user.
+test.beforeEach(async ({ page }, testInfo) => {
+  if (testInfo.title !== "landing page links to sign in") await signUpAndSignIn(page);
+});
+
 /**
  * Smoke test for the whole platform: the app loads, every service is healthy,
  * and a real background job runs in the Celery worker with live progress.
  */
 
-test("landing page opens the app", async ({ page }) => {
+test("landing page links to sign in", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("link", { name: "Open the app" }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
+  await page.getByRole("link", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole("heading", { name: "Sign in", level: 1 })).toBeVisible();
 });
 
 test("system status shows every service working", async ({ page }) => {

@@ -4,7 +4,7 @@ A reusable SaaS starter: FastAPI + Postgres + Redis + Celery backend, Next.js fr
 Every product (AskDocs, LeadPilot, InvoiceAI Pro, CountVision) is created from this repo
 with GitHub's **Use this template** button.
 
-**Status:** phase 1B — skeleton, local development, app shell, typed API client, background jobs with live status, CI, pre-commit hooks.
+**Status:** phase 2A — accounts (email + Google), email verification, password reset, secure sessions, brute-force protection, workspaces with a switcher. Built on phase 1: app shell, typed API client, background jobs, CI.
 
 ## What's inside
 
@@ -85,6 +85,30 @@ Then open:
 | Emails (Mailpit) | http://localhost:8025 |
 
 The frontend waits for the backend to be healthy, so the app can take ~30 seconds after `make dev` finishes.
+
+## Your first account
+
+1. Open http://localhost:3000 → **Create account**.
+2. Open **Mailpit** at http://localhost:8025. Every email the app sends lands there (nothing goes to real inboxes).
+3. Click the confirmation link in the email. You are signed in and land in your own workspace.
+
+Forgot a password? Use **Forgot password?** on the sign-in page; the reset email also appears in Mailpit.
+
+## Google sign-in (optional)
+
+The "Continue with Google" button appears only after you add your keys.
+
+1. Go to https://console.cloud.google.com and create a project.
+2. **APIs & Services → OAuth consent screen**: choose **External**, fill in the app name and your email. Add yourself under **Test users**.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → **Web application**.
+   Under **Authorized redirect URIs** add exactly: `http://localhost:3000/api/auth/google/callback`
+4. Create the file `backend\.env` (copy `backend\.env.example`) and fill in:
+   ```
+   GOOGLE_CLIENT_ID=...apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=...
+   ```
+   This file is private: it is in `.gitignore` and never goes to GitHub. Never paste these keys into a chat.
+5. `make restart s=backend` — the button appears on the sign-in page.
 
 ## Everyday commands
 
@@ -169,14 +193,14 @@ To add a job to a product:
    Call `make_reporter(job_id).progress(40, "Reading page 4 of 10")` while it works.
    Raise `JobFailedError("message for the user")` for failures the user should read.
 2. Register it in `backend/app/workers/registry.py`.
-3. Start it from a service with `JobService.enqueue("your-kind", params)`.
+3. Start it from a service with `JobService.enqueue("your-kind", params, organization_id=..., created_by_id=...)`.
 4. In the UI, follow it with `useJob(jobId)` and show `<JobProgress job={job} />`.
 
 Temporary errors (`TemporaryError`) are retried with backoff (up to 3 times).
 Other errors show a safe message to the user; the full error is in `make logs s=worker`.
 
-Note: until phase 2 adds login, the jobs API is switched **off in production**
-(`JOBS_API_ENABLED`), because an open job queue could be abused.
+Jobs belong to the active workspace: start them with
+`JobService.enqueue(kind, params, organization_id=ctx.organization.id, created_by_id=ctx.user.id)`.
 
 ## Change the product name and colour
 
@@ -204,6 +228,10 @@ step-by-step trace of the failing test. Check that `make dev` is running and the
 
 **CI fails at "Pre-commit hooks"** — run `py -3.12 -m pre_commit run --all-files`, then commit the fixes.
 
+**"Too many requests" while testing** — the brute-force protection. Wait a minute. Locally the limit is 300 auth requests per minute per IP (production: 20), and 5 wrong passwords lock that email for 15 minutes.
+
+**The confirmation email doesn't arrive** — open http://localhost:8025. Still nothing? `make logs s=worker` (the worker sends emails).
+
 **Something is badly broken** — `make clean` then `make dev` (this deletes your local database).
 
 ## Tests without Docker (optional)
@@ -216,4 +244,5 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-Unit tests need no database. Integration tests only run through `make test`.
+Unit tests need no database. Integration tests only run through `make test`. They use a
+separate database (`app_test`), so running tests never deletes your local accounts.

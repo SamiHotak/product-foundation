@@ -19,7 +19,6 @@ def build_schema() -> str:
     settings = Settings(
         _env_file=None,
         environment=Environment.DEVELOPMENT,
-        jobs_api_enabled=True,
         log_level="WARNING",
     )
     schema = create_app(settings).openapi()

@@ -21,6 +21,7 @@ export class ApiError extends Error {
     public readonly code: string,
     message: string,
     public readonly requestId: string | null,
+    public readonly details: unknown = null,
   ) {
     super(message);
     this.name = "ApiError";
@@ -40,7 +41,13 @@ export function isErrorResponse(value: unknown): value is ErrorResponse {
 /** Turn any failed response body into an ApiError with a message people can read. */
 export function toApiError(status: number, body: unknown): ApiError {
   if (isErrorResponse(body)) {
-    return new ApiError(status, body.error.code, body.error.message, body.error.request_id);
+    return new ApiError(
+      status,
+      body.error.code,
+      body.error.message,
+      body.error.request_id,
+      body.error.details ?? null,
+    );
   }
   return new ApiError(status, "http_error", `The server answered with ${status}.`, null);
 }
@@ -67,6 +74,20 @@ export async function unwrap<T extends ClientResult>(
     return result.data as NonNullable<T["data"]>;
   }
   throw toApiError(result.response.status, result.error);
+}
+
+/** Field errors from a 422 response: { email: "value is not a valid email address", ... }. */
+export function fieldErrors(err: unknown): Record<string, string> {
+  if (!(err instanceof ApiError) || err.code !== "validation_error") return {};
+  const out: Record<string, string> = {};
+  const details = err.details;
+  if (Array.isArray(details)) {
+    for (const d of details as { field?: string; message?: string }[]) {
+      const name = d.field?.split(".").pop();
+      if (name && d.message && !out[name]) out[name] = d.message;
+    }
+  }
+  return out;
 }
 
 /** A short, user-facing message for any thrown value. */

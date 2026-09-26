@@ -9,3 +9,6 @@ psycopg[binary]==3.3.6
 redis==6.4.0  # kombu (Celery) requires redis<6.5
 celery[redis]==5.6.3
 structlog==26.1.0
+argon2-cffi==25.1.0  # password hashing (Argon2id)
+httpx==0.28.1  # outgoing HTTP (Google sign-in)
+email-validator==2.3.0  # EmailStr validation

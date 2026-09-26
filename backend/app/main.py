@@ -12,11 +12,12 @@ from fastapi.routing import APIRoute
 
 from app import __version__
 from app.core.config import Settings, get_settings
+from app.core.csrf import CsrfMiddleware
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestContextMiddleware
 from app.db.session import get_async_engine
-from app.routers import health, jobs
+from app.routers import auth, health, jobs, organizations
 from app.schemas.errors import error_responses
 
 logger = get_logger(__name__)
@@ -62,6 +63,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["Content-Type", "Authorization", "X-Request-ID"],
         expose_headers=["X-Request-ID"],
     )
+    app.add_middleware(
+        CsrfMiddleware,
+        cookie_name=settings.session_cookie_name,
+        allowed_origins=settings.allowed_origins,
+    )
     # Added last = runs first, so the request id exists for everything else.
     app.add_middleware(RequestContextMiddleware)
 
@@ -70,8 +76,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Every endpoint can answer 422 / 500 in the standard error format.
     api = APIRouter(prefix=settings.api_prefix, responses=error_responses(422, 500))
     api.include_router(health.router)
-    if settings.jobs_api_enabled:
-        api.include_router(jobs.router)
+    api.include_router(auth.router)
+    api.include_router(organizations.router)
+    api.include_router(jobs.router)
     app.include_router(api)
 
     return app

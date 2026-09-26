@@ -17,9 +17,12 @@ export default function LandingPage() {
         {product.name}
       </h1>
       <p className="max-w-xl text-lg text-ink-muted">{product.tagline}</p>
-      <div>
+      <div className="flex flex-wrap gap-3">
         <Button asChild>
-          <Link href="/dashboard">Open the app</Link>
+          <Link href="/signup">Create account</Link>
+        </Button>
+        <Button asChild variant="secondary">
+          <Link href="/login">Sign in</Link>
         </Button>
       </div>
     </main>

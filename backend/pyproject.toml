@@ -40,4 +40,6 @@ addopts = "-ra --strict-markers"
 
 [tool.coverage.run]
 source = ["app"]
+# SQLAlchemy's async mode runs code in greenlets; without this, coverage misses those lines.
+concurrency = ["greenlet", "thread"]
 omit = ["app/scripts/*"]

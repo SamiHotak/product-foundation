@@ -30,6 +30,24 @@ class AppError(Exception):
         self.details = details
 
 
+class UnauthorizedError(AppError):
+    """Not signed in, or the session expired."""
+
+    status_code = status.HTTP_401_UNAUTHORIZED
+    code = "unauthorized"
+
+
+class RateLimitedError(AppError):
+    """Too many attempts. `retry_after` is in seconds."""
+
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = "too_many_requests"
+
+    def __init__(self, message: str, *, retry_after: int) -> None:
+        super().__init__(message, details={"retry_after": retry_after})
+        self.retry_after = retry_after
+
+
 class NotFoundError(AppError):
     """The resource does not exist (or the caller may not see it)."""
 
@@ -78,13 +96,20 @@ def error_body(code: str, message: str, request: Request, details: Any = None) -
 async def app_error_handler(request: Request, exc: Exception) -> JSONResponse:
     """Handle expected application errors."""
     assert isinstance(exc, AppError)
+    headers = {"Retry-After": str(exc.retry_after)} if isinstance(exc, RateLimitedError) else None
     return JSONResponse(
         status_code=exc.status_code,
         content=error_body(exc.code, exc.message, request, exc.details),
+        headers=headers,
     )
 
 
-_HTTP_CODES = {401: "unauthorized", 404: "not_found", 405: "method_not_allowed"}
+_HTTP_CODES = {
+    401: "unauthorized",
+    403: "permission_denied",
+    404: "not_found",
+    405: "method_not_allowed",
+}
 
 
 async def http_error_handler(request: Request, exc: Exception) -> JSONResponse:

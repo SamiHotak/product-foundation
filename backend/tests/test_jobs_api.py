@@ -7,10 +7,13 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from app.core.config import Environment, Settings
-from app.main import create_app
+from app.models.organization import Membership, Organization, Role
+from app.models.session import UserSession
+from app.models.user import User
+from app.routers.deps import get_org_context
 from app.routers.jobs import get_job_service
 from app.services.jobs import JobService
+from app.services.organizations import OrgContext
 from tests.fakes import FakeDispatcher, FakeJobStore
 
 
@@ -24,11 +27,27 @@ def dispatcher() -> FakeDispatcher:
     return FakeDispatcher()
 
 
+ORG_ID = uuid.uuid4()
+
+
+def fake_context() -> OrgContext:
+    """A signed-in user in one workspace (the real sign-in is tested in test_auth_flows)."""
+    user = User(id=uuid.uuid4(), email="a@example.com", name="A")
+    org = Organization(id=ORG_ID, name="A's workspace")
+    return OrgContext(
+        user=user,
+        session=UserSession(user_id=user.id),
+        organization=org,
+        membership=Membership(organization_id=org.id, user_id=user.id, role=Role.OWNER),
+    )
+
+
 @pytest.fixture
 async def jobs_client(
     app: FastAPI, store: FakeJobStore, dispatcher: FakeDispatcher
 ) -> AsyncIterator[AsyncClient]:
     app.dependency_overrides[get_job_service] = lambda: JobService(store, dispatcher)
+    app.dependency_overrides[get_org_context] = fake_context
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
@@ -56,6 +75,7 @@ async def test_create_example_job_validates_input(jobs_client: AsyncClient) -> N
 
 async def test_queue_down_returns_503_in_standard_format(app: FastAPI, store: FakeJobStore) -> None:
     app.dependency_overrides[get_job_service] = lambda: JobService(store, FakeDispatcher(fail=True))
+    app.dependency_overrides[get_org_context] = fake_context
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         res = await c.post("/api/jobs/example", json={})
@@ -89,14 +109,16 @@ async def test_list_limit_is_bounded(jobs_client: AsyncClient) -> None:
     assert res.status_code == 422
 
 
-async def test_jobs_api_is_off_in_production_until_auth_exists() -> None:
-    prod = Settings(_env_file=None, environment=Environment.PRODUCTION, secret_key="x" * 40)
-    assert prod.jobs_api_enabled is False
-    transport = ASGITransport(app=create_app(prod), raise_app_exceptions=False)
+async def test_jobs_need_sign_in(app: FastAPI) -> None:
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
-        assert (await c.get("/api/jobs")).status_code == 404
+        res = await c.get("/api/jobs")
+    assert res.status_code == 401
+    assert res.json()["error"]["code"] == "unauthorized"
 
 
-def test_jobs_api_can_be_forced_on_or_off() -> None:
-    assert Settings(_env_file=None, jobs_api_enabled=False).jobs_api_enabled is False
-    assert Settings(_env_file=None, environment=Environment.TEST).jobs_api_enabled is True
+async def test_created_job_belongs_to_active_workspace(
+    jobs_client: AsyncClient, dispatcher: FakeDispatcher
+) -> None:
+    await jobs_client.post("/api/jobs/example", json={"steps": 1})
+    assert dispatcher.sent[0].organization_id == ORG_ID

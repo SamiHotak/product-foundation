@@ -37,3 +37,27 @@ async def test_migrations_applied_and_pgvector_enabled() -> None:
     assert revision is not None
     assert vector == 1
     await get_async_engine().dispose()
+
+
+async def test_redis_rate_limiter_with_real_redis() -> None:
+    import uuid
+
+    from redis.asyncio import Redis
+
+    from app.core.rate_limit import RedisRateLimiter
+
+    client = Redis.from_url(get_settings().redis_url)
+    limiter = RedisRateLimiter(client)
+    key = f"test:{uuid.uuid4()}"
+    try:
+        assert [await limiter.hit(key, limit=2, window_seconds=30) for _ in range(2)] == [
+            None,
+            None,
+        ]
+        wait = await limiter.hit(key, limit=2, window_seconds=30)
+        assert wait is not None and 0 < wait <= 30
+        assert (await limiter.count(key))[0] == 3
+        await limiter.reset(key)
+        assert (await limiter.count(key))[0] == 0
+    finally:
+        await client.aclose()

@@ -9,7 +9,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, Index, Integer, String
+from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,10 +31,7 @@ class JobStatus(StrEnum):
 
 
 class Job(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """A background job and its live status.
-
-    Phase 2 adds `organization_id` (required) and scopes every query by it.
-    """
+    """A background job and its live status. Always belongs to one organization."""
 
     __tablename__ = "jobs"
     __table_args__ = (
@@ -45,6 +42,13 @@ class Job(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # (Postgres RETURNING), so async code never triggers a lazy load.
     __mapper_args__ = {"eager_defaults": True}  # noqa: RUF012
 
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    # Who started it (None for system jobs, e.g. scheduled ones).
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
     kind: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[JobStatus] = mapped_column(
         Enum(

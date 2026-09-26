@@ -7,6 +7,7 @@ Start beat:      celery -A app.workers.celery_app beat --loglevel=INFO
 from typing import Any
 
 from celery import Celery
+from celery.schedules import crontab
 from celery.signals import setup_logging
 
 from app.core.config import get_settings
@@ -40,6 +41,10 @@ celery_app.conf.update(
         "heartbeat-every-5-minutes": {
             "task": "app.workers.tasks.heartbeat",
             "schedule": 5 * 60.0,
+        },
+        "cleanup-auth-nightly": {
+            "task": "app.workers.tasks.cleanup_auth",
+            "schedule": crontab(hour=3, minute=17),
         },
     },
 )

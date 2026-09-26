@@ -1,4 +1,4 @@
-"""In-memory fakes for jobs (no Postgres, no Redis)."""
+"""In-memory fakes (no Postgres, Redis, mail server or Google)."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -14,11 +14,20 @@ class FakeJobStore:
         self.jobs: dict[uuid.UUID, Job] = {}
         self.commits = 0
 
-    async def create(self, *, kind: str, params: dict[str, Any]) -> Job:
+    async def create(
+        self,
+        *,
+        kind: str,
+        params: dict[str, Any],
+        organization_id: uuid.UUID,
+        created_by_id: uuid.UUID | None,
+    ) -> Job:
         # Strictly increasing timestamps, so ordering is deterministic.
         now = datetime.now(UTC) + timedelta(microseconds=len(self.jobs))
         job = Job(
             id=uuid.uuid4(),
+            organization_id=organization_id,
+            created_by_id=created_by_id,
             kind=kind,
             status=JobStatus.QUEUED,
             progress=0,
@@ -35,11 +44,13 @@ class FakeJobStore:
         self.jobs[job.id] = job
         return job
 
-    async def get(self, job_id: uuid.UUID) -> Job | None:
-        return self.jobs.get(job_id)
+    async def get(self, job_id: uuid.UUID, *, organization_id: uuid.UUID) -> Job | None:
+        job = self.jobs.get(job_id)
+        return job if job is not None and job.organization_id == organization_id else None
 
-    async def list_recent(self, *, limit: int) -> list[Job]:
-        return sorted(self.jobs.values(), key=lambda j: j.created_at, reverse=True)[:limit]
+    async def list_recent(self, *, organization_id: uuid.UUID, limit: int) -> list[Job]:
+        mine = [j for j in self.jobs.values() if j.organization_id == organization_id]
+        return sorted(mine, key=lambda j: j.created_at, reverse=True)[:limit]
 
     async def mark_failed(self, job: Job, error: str) -> None:
         job.status = JobStatus.FAILED
@@ -90,3 +101,49 @@ class FakeReporter:
 
     def names(self) -> list[str]:
         return [name for name, _ in self.events]
+
+
+class FakeEmailSender:
+    """Records emails instead of sending them."""
+
+    def __init__(self) -> None:
+        from app.services.email import EmailMessage
+
+        self.sent: list[EmailMessage] = []
+
+    async def send(self, message: Any) -> None:
+        self.sent.append(message)
+
+    def last_to(self, email: str) -> Any:
+        found = [m for m in self.sent if m.to.lower() == email.lower()]
+        assert found, f"no email to {email}"
+        return found[-1]
+
+    def link_token(self, email: str) -> str:
+        """The token from the link in the newest email to this address."""
+        import re
+
+        match = re.search(r"token=([A-Za-z0-9_-]+)", self.last_to(email).text)
+        assert match, "no token link in email"
+        return match.group(1)
+
+
+class FakeGoogleClient:
+    """Pretends to be Google. Set `profile` (or `error`) before the callback."""
+
+    def __init__(self) -> None:
+        from app.services.google_oauth import GoogleProfile
+
+        self.profile: GoogleProfile | None = None
+        self.error: Exception | None = None
+        self.last_verifier: str | None = None
+
+    def authorize_url(self, *, state: str, code_challenge: str, redirect_uri: str) -> str:
+        return f"https://accounts.example/auth?state={state}&challenge={code_challenge}"
+
+    async def fetch_profile(self, *, code: str, code_verifier: str, redirect_uri: str) -> Any:
+        self.last_verifier = code_verifier
+        if self.error:
+            raise self.error
+        assert self.profile is not None
+        return self.profile

@@ -1,7 +1,7 @@
 """Job persistence.
 
 `JobRepository` (async) is used by the API. `SyncJobRepository` is used by Celery
-workers and scripts. Phase 2 adds `organization_id` to every query here.
+workers and scripts. Every API query is scoped to one organization.
 """
 
 import uuid
@@ -22,16 +22,23 @@ def _now() -> datetime:
 class JobStore(Protocol):
     """What the job service needs from storage (lets tests use an in-memory fake)."""
 
-    async def create(self, *, kind: str, params: dict[str, Any]) -> Job:
+    async def create(
+        self,
+        *,
+        kind: str,
+        params: dict[str, Any],
+        organization_id: uuid.UUID,
+        created_by_id: uuid.UUID | None,
+    ) -> Job:
         """Insert a queued job."""
         ...
 
-    async def get(self, job_id: uuid.UUID) -> Job | None:
-        """Return one job, or None."""
+    async def get(self, job_id: uuid.UUID, *, organization_id: uuid.UUID) -> Job | None:
+        """Return one job of this organization, or None."""
         ...
 
-    async def list_recent(self, *, limit: int) -> list[Job]:
-        """Newest jobs first."""
+    async def list_recent(self, *, organization_id: uuid.UUID, limit: int) -> list[Job]:
+        """Newest jobs of this organization first."""
         ...
 
     async def mark_failed(self, job: Job, error: str) -> None:
@@ -49,10 +56,19 @@ class JobRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def create(self, *, kind: str, params: dict[str, Any]) -> Job:
+    async def create(
+        self,
+        *,
+        kind: str,
+        params: dict[str, Any],
+        organization_id: uuid.UUID,
+        created_by_id: uuid.UUID | None,
+    ) -> Job:
         """Insert a queued job and return it with database defaults filled in."""
         job = Job(
             id=new_job_id(),
+            organization_id=organization_id,
+            created_by_id=created_by_id,
             kind=kind,
             status=JobStatus.QUEUED,
             progress=0,
@@ -64,14 +80,22 @@ class JobRepository:
         await self._session.flush()
         return job
 
-    async def get(self, job_id: uuid.UUID) -> Job | None:
-        """Return one job, or None."""
-        return await self._session.get(Job, job_id, populate_existing=True)
+    async def get(self, job_id: uuid.UUID, *, organization_id: uuid.UUID) -> Job | None:
+        """Return one job of this organization, or None (other orgs' jobs "don't exist")."""
+        found: Job | None = await self._session.scalar(
+            select(Job)
+            .where(Job.id == job_id, Job.organization_id == organization_id)
+            .execution_options(populate_existing=True)
+        )
+        return found
 
-    async def list_recent(self, *, limit: int) -> list[Job]:
-        """Newest jobs first."""
+    async def list_recent(self, *, organization_id: uuid.UUID, limit: int) -> list[Job]:
+        """Newest jobs of this organization first."""
         rows = await self._session.scalars(
-            select(Job).order_by(Job.created_at.desc(), Job.id.desc()).limit(limit)
+            select(Job)
+            .where(Job.organization_id == organization_id)
+            .order_by(Job.created_at.desc(), Job.id.desc())
+            .limit(limit)
         )
         return list(rows)
 
@@ -94,10 +118,11 @@ class SyncJobRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def create(self, *, kind: str, params: dict[str, Any]) -> Job:
-        """Insert a queued job (used by scripts)."""
+    def create(self, *, kind: str, params: dict[str, Any], organization_id: uuid.UUID) -> Job:
+        """Insert a queued job (used by scripts and scheduled tasks)."""
         job = Job(
             id=new_job_id(),
+            organization_id=organization_id,
             kind=kind,
             status=JobStatus.QUEUED,
             progress=0,

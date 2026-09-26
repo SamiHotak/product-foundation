@@ -52,9 +52,34 @@ class Settings(BaseSettings):
     # Timeouts for health checks (seconds)
     health_check_timeout: float = 2.0
 
-    # Jobs API. On by default in development/test. Off in production until phase 2
-    # protects it with login + organization scoping (an open queue invites abuse).
-    jobs_api_enabled: bool | None = None
+    # Public URL of the web app (links in emails, Google redirect, CSRF origin check).
+    app_url: str = "http://localhost:3000"
+
+    # Sessions (server-side, in Postgres; the browser only holds a random id in a cookie).
+    session_cookie_name: str = "session"
+    session_days: int = 30
+    session_cookie_secure: bool | None = None  # default: True in production
+
+    # Email (Mailpit locally; a real provider in phase 4A).
+    smtp_host: str = "localhost"
+    smtp_port: int = 1025
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_starttls: bool = False
+    email_from: str = "Foundation <no-reply@localhost>"
+
+    # Token lifetimes
+    email_verification_hours: int = 48
+    password_reset_minutes: int = 60
+
+    # Brute-force protection
+    login_max_failures: int = 5  # per email, then locked for login_lock_minutes
+    login_lock_minutes: int = 15
+    auth_requests_per_minute_per_ip: int = 20
+
+    # Google sign-in. Leave empty to hide the button.
+    google_client_id: str | None = None
+    google_client_secret: SecretStr | None = None
 
     @model_validator(mode="after")
     def _fill_defaults_and_check(self) -> "Settings":
@@ -62,14 +87,25 @@ class Settings(BaseSettings):
             self.celery_broker_url = self.redis_url
         if self.celery_result_backend is None:
             self.celery_result_backend = self.redis_url
-        if self.jobs_api_enabled is None:
-            self.jobs_api_enabled = self.environment is not Environment.PRODUCTION
+        if self.session_cookie_secure is None:
+            self.session_cookie_secure = self.environment is Environment.PRODUCTION
+        self.app_url = self.app_url.rstrip("/")
         if (
             self.environment is Environment.PRODUCTION
             and self.secret_key.get_secret_value() == DEV_SECRET_KEY
         ):
             raise ValueError("SECRET_KEY must be set to a strong random value in production.")
         return self
+
+    @property
+    def google_enabled(self) -> bool:
+        """True when Google sign-in is configured."""
+        return bool(self.google_client_id and self.google_client_secret)
+
+    @property
+    def allowed_origins(self) -> set[str]:
+        """Origins allowed to send state-changing requests with the session cookie."""
+        return {self.app_url, *(o.rstrip("/") for o in self.cors_origins)}
 
     @property
     def is_production(self) -> bool:

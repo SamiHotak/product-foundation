@@ -18,7 +18,17 @@ x-backend-env: &backend-env
   LOG_LEVEL: INFO
   DATABASE_URL: postgresql+psycopg://app:app@postgres:5432/app
   REDIS_URL: redis://redis:6379/0
-  CORS_ORIGINS: '["http://localhost:3000"]'
+  # Browser origins allowed to call the API with the session cookie.
+  # frontend:3000 is how Playwright (make e2e) opens the app inside Docker.
+  APP_NAME: Foundation # shown in emails; keep equal to name in frontend/config/product.ts
+  APP_URL: http://localhost:3000
+  CORS_ORIGINS: '["http://localhost:3000", "http://frontend:3000"]'
+  # Emails go to Mailpit: open http://localhost:8025 to read them.
+  SMTP_HOST: mailpit
+  SMTP_PORT: "1025"
+  # Local only: the browser tests sign up many users from one IP. Production keeps 20/min.
+  AUTH_REQUESTS_PER_MINUTE_PER_IP: "300"
+  # Google sign-in keys are NOT here: put them in backend/.env (never committed).
   # Windows + Docker Desktop: file change events don't cross into containers, so poll.
   WATCHFILES_FORCE_POLLING: "true"
 
@@ -79,7 +89,8 @@ services:
     # Apply migrations, then start the API with auto-reload.
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+             --proxy-headers --forwarded-allow-ips='*'"
     ports:
       - "8000:8000"
     healthcheck:
@@ -150,6 +161,7 @@ services:
     image: foundation-frontend:e2e
     environment:
       PLAYWRIGHT_BASE_URL: http://frontend:3000
+      MAILPIT_URL: http://mailpit:8025
     volumes:
       - ../frontend:/app
       - /app/node_modules

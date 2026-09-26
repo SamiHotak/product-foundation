@@ -6,7 +6,10 @@ Run: python -m app.scripts.run_example_job   (or: make example-job)
 
 import time
 
+from sqlalchemy import select
+
 from app.db.session import sync_session
+from app.models.organization import Organization
 from app.repositories.jobs import SyncJobRepository
 from app.workers.dispatch import send_job
 
@@ -15,7 +18,16 @@ def main(steps: int = 5, timeout_seconds: float = 60.0) -> None:
     """Create a job row, queue the task, poll the row until it finishes."""
     params = {"steps": steps, "fail": False}
     with sync_session() as session:
-        job_id = SyncJobRepository(session).create(kind="example", params=params).id
+        org = session.scalar(select(Organization).order_by(Organization.created_at).limit(1))
+        if org is None:
+            raise SystemExit(
+                "No workspace yet. Sign up in the app first: http://localhost:3000/signup"
+            )
+        job_id = (
+            SyncJobRepository(session)
+            .create(kind="example", params=params, organization_id=org.id)
+            .id
+        )
     send_job(job_id, "example", params)
     print(f"Queued example job {job_id}")
 
