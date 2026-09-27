@@ -28,6 +28,8 @@ class AuditAction(StrEnum):
 
     AUTH_LOGIN = "auth.login"
     AUTH_PASSWORD_RESET = "auth.password_reset"  # noqa: S105 - an event name
+    AUTH_PASSWORD_CHANGED = "auth.password_changed"  # noqa: S105 - an event name
+    ACCOUNT_PROFILE_UPDATED = "account.profile_updated"
     ORG_CREATED = "org.created"
     ORG_RENAMED = "org.renamed"
     ORG_OWNERSHIP_TRANSFERRED = "org.ownership_transferred"

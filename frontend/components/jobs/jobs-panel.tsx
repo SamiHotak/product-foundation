@@ -35,7 +35,7 @@ export function JobsPanel() {
   const announcement = useFinishAnnouncement(jobs);
 
   return (
-    <section aria-labelledby="jobs-title" className="max-w-2xl">
+    <section id="jobs" aria-labelledby="jobs-title" className="max-w-2xl scroll-mt-6">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-0.5">
           <h2 id="jobs-title" className="text-base font-semibold">

@@ -3,7 +3,7 @@
 import { Menu } from "lucide-react";
 import { useState } from "react";
 
-import { NavLinks } from "@/components/layout/nav-links";
+import { SidebarNav } from "@/components/layout/nav-links";
 import { ProductMark } from "@/components/layout/product-mark";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -21,7 +21,7 @@ export function MobileNav() {
       <SheetContent className="gap-6 px-3 py-4">
         <SheetTitle className="sr-only">Navigation</SheetTitle>
         <ProductMark />
-        <NavLinks onNavigate={() => setOpen(false)} />
+        <SidebarNav onNavigate={() => setOpen(false)} />
       </SheetContent>
     </Sheet>
   );

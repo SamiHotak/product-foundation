@@ -35,3 +35,5 @@ export type ApiKeyCreated = Schemas["ApiKeyCreated"];
 export type ApiKeyScope = Schemas["ApiKeyCreate"]["scopes"][number];
 export type AuditEntry = Schemas["AuditEntry"];
 export type DataExport = Schemas["ExportRead"];
+export type Onboarding = Schemas["OnboardingStatus"];
+export type OnboardingStep = Schemas["OnboardingStep"];

@@ -16,15 +16,17 @@ function collectErrors(page: Page): string[] {
   return errors;
 }
 
-/** The owner invites `email` from Settings → Workspace; returns the invite link path. */
+/** The owner invites `email` from Settings → Members; returns the invite link path. */
 async function invite(page: Page, email: string, role: "Member" | "Admin"): Promise<string> {
-  await page.goto("/settings/workspace");
+  await page.goto("/settings/members");
   const form = page.getByRole("form", { name: "Invite someone" });
   await form.getByLabel("Invite by email").fill(email);
   await form.getByLabel("Role").selectOption({ label: role });
   await form.getByRole("button", { name: "Send invite" }).click();
-  await expect(form.getByText(`Invite sent to ${email}`)).toBeVisible();
-  await expect(page.getByRole("list", { name: "Open invites" })).toContainText(email);
+  await expect(page.getByRole("region", { name: "Notifications" })).toContainText(
+    `Invite sent to ${email}`,
+  );
+  await expect(page.getByRole("table", { name: "Open invites" })).toContainText(email);
   const mail = await waitForEmail(page.request, email, "invited you");
   return linkPath(mail.text, "/invite");
 }
@@ -53,12 +55,14 @@ test("sign up, invite, accept, and role limits", async ({ page, browser }) => {
   await expect(member.getByRole("button", { name: /Workspace: Olivia's workspace/ })).toBeVisible();
 
   // A member sees the team, but none of the admin tools.
-  await member.goto("/settings/workspace");
+  await member.goto("/settings/members");
   const settingsNav = member.getByRole("navigation", { name: "Settings" });
   await expect(settingsNav.getByRole("link", { name: "Workspace" })).toBeVisible();
+  await expect(settingsNav.getByRole("link", { name: "Members" })).toBeVisible();
   await expect(settingsNav.getByRole("link", { name: "API keys" })).toHaveCount(0);
   await expect(settingsNav.getByRole("link", { name: "Audit log" })).toHaveCount(0);
-  const members = member.getByRole("list", { name: "Members" });
+  await expect(settingsNav.getByRole("link", { name: "Billing" })).toHaveCount(0);
+  const members = member.getByRole("table", { name: "Members" });
   await expect(members).toContainText("Olivia Owner");
   await expect(members).toContainText("Mia Member (you)");
   await expect(member.getByLabel("Invite by email")).toHaveCount(0);
@@ -67,6 +71,8 @@ test("sign up, invite, accept, and role limits", async ({ page, browser }) => {
   await expect(
     member.getByText("Only owners and admins can see and create API keys."),
   ).toBeVisible();
+  await member.goto("/settings/billing");
+  await expect(member.getByText("Only the owner of this workspace manages billing.")).toBeVisible();
   // The API refuses too (hiding buttons is not the security).
   const forbidden = await member.request.post("/api/organizations/current/invites", {
     data: { email: newEmail("sneaky") },
@@ -74,10 +80,13 @@ test("sign up, invite, accept, and role limits", async ({ page, browser }) => {
   expect(forbidden.status()).toBe(403);
 
   // The owner makes Mia an admin; Mia's app shows the admin tools after a reload.
-  await page.goto("/settings/workspace");
+  await page.goto("/settings/members");
   await page.getByRole("combobox", { name: "Role of Mia Member" }).selectOption("admin");
   await expect(page.getByRole("combobox", { name: "Role of Mia Member" })).toHaveValue("admin");
-  await member.goto("/settings/workspace");
+  await expect(page.getByRole("region", { name: "Notifications" })).toContainText(
+    "Mia Member is now an admin.",
+  );
+  await member.goto("/settings/members");
   await expect(
     member.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "API keys" }),
   ).toBeVisible();
@@ -127,10 +136,13 @@ test("the owner can't leave, and transfers ownership", async ({ page, browser })
 
   await page.goto("/settings/workspace");
   await expect(page.getByText("You own this workspace, so you can't leave it.")).toBeVisible();
+  await page.goto("/settings/members");
   await page.getByRole("button", { name: "More actions for Hugo Heir" }).click();
   await page.getByRole("menuitem", { name: "Make owner" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Make owner" }).click();
-  await expect(page.getByRole("list", { name: "Members" })).toContainText("Owner");
+  const hugo = page.locator("[data-member-email]").filter({ hasText: "Hugo Heir" });
+  await expect(hugo).toContainText("Owner");
+  await page.goto("/settings/workspace");
   await expect(page.getByRole("button", { name: "Leave Tina's workspace" })).toBeVisible();
 
   await heir.goto("/settings/privacy");
@@ -165,7 +177,7 @@ test("API key: create, copy once, use, revoke", async ({ page }) => {
   const row = page.locator('[data-key-name="Nightly import"]');
   await expect(row).toContainText("Read jobs");
   await page.reload();
-  await expect(row).toContainText(/Last used/);
+  await expect(row).toContainText(/just now|ago/);
   await row.getByRole("button", { name: "Revoke" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Revoke key" }).click();
   await expect(page.getByText("No API keys yet")).toBeVisible();

@@ -1,8 +1,8 @@
 """Who may do what. The ONE place to read or change the rules.
 
 Roles (per workspace):
-- owner   exactly one per workspace. Everything, incl. deleting the workspace and giving
-          ownership to someone else.
+- owner   exactly one per workspace. Everything, incl. deleting the workspace, giving
+          ownership to someone else, and billing (plan, payment method, invoices).
 - admin   manages the team (invite, change roles, remove), API keys, audit log, exports.
           Can never change or remove the owner.
 - member  uses the product. Sees who is in the team.
@@ -28,6 +28,7 @@ class Permission(StrEnum):
     MEMBERS_MANAGE = "members:manage"
     API_KEYS_MANAGE = "api_keys:manage"
     AUDIT_READ = "audit:read"
+    BILLING_MANAGE = "billing:manage"
     JOBS_READ = "jobs:read"
     JOBS_WRITE = "jobs:write"
 
@@ -47,7 +48,11 @@ _ADMIN = _MEMBER | {
     Permission.API_KEYS_MANAGE,
     Permission.AUDIT_READ,
 }
-_OWNER = _ADMIN | {Permission.ORG_DELETE, Permission.OWNERSHIP_TRANSFER}
+_OWNER = _ADMIN | {
+    Permission.ORG_DELETE,
+    Permission.OWNERSHIP_TRANSFER,
+    Permission.BILLING_MANAGE,
+}
 
 # Keyed by the role's value ("owner", "admin", "member"), see app.models.organization.Role.
 ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {

@@ -1,14 +1,9 @@
 import type { Metadata } from "next";
 
-import { Section } from "@/components/settings/section";
-import { ProfileSummary } from "@/components/settings/profile-summary";
+import { ProfileSettings } from "@/components/settings/profile-settings";
 
-export const metadata: Metadata = { title: "Settings" };
+export const metadata: Metadata = { title: "Profile" };
 
 export default function SettingsPage() {
-  return (
-    <Section title="Profile" description="Changing your name and email arrives in a later update.">
-      <ProfileSummary />
-    </Section>
-  );
+  return <ProfileSettings />;
 }

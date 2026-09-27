@@ -5,7 +5,17 @@ from typing import Annotated
 from fastapi import APIRouter, Response, status
 
 from app.core.permissions import Permission
-from app.routers.deps import CurrentUser, Deletions, Exports, Members, OrgCtx, Orgs, require
+from app.routers.deps import (
+    CurrentUser,
+    Deletions,
+    Exports,
+    Members,
+    Onboarding,
+    OrgCtx,
+    Orgs,
+    require,
+)
+from app.schemas.account import OnboardingStatus
 from app.schemas.auth import OrganizationCreate, OrganizationRead
 from app.schemas.errors import error_responses
 from app.schemas.privacy import DeletionRequest, DeletionStatus, ExportRead
@@ -124,3 +134,36 @@ async def export_organization(
 ) -> ExportRead:
     """Owners and admins. Follow the job, then download the ZIP."""
     return await exports.start_org_export(ctx)
+
+
+@router.get(
+    "/current/onboarding",
+    response_model=OnboardingStatus,
+    responses=error_responses(401),
+    summary="My “Get started” checklist",
+)
+async def get_onboarding(ctx: OrgCtx, onboarding: Onboarding) -> OnboardingStatus:
+    """Which first steps are done in the active workspace (only steps you may do)."""
+    return await onboarding.status(ctx)
+
+
+@router.post(
+    "/current/onboarding/dismiss",
+    response_model=OnboardingStatus,
+    responses=error_responses(401),
+    summary="Hide the checklist",
+)
+async def dismiss_onboarding(ctx: OrgCtx, onboarding: Onboarding) -> OnboardingStatus:
+    """Only for you, only in this workspace."""
+    return await onboarding.dismiss(ctx)
+
+
+@router.delete(
+    "/current/onboarding/dismiss",
+    response_model=OnboardingStatus,
+    responses=error_responses(401),
+    summary="Show the checklist again",
+)
+async def restore_onboarding(ctx: OrgCtx, onboarding: Onboarding) -> OnboardingStatus:
+    """Undo hiding it."""
+    return await onboarding.restore(ctx)

@@ -55,3 +55,5 @@ class Membership(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             validate_strings=True,
         )
     )
+    # The person hid the "Get started" checklist in this workspace (per person, per workspace).
+    onboarding_dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

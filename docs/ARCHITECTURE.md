@@ -54,7 +54,9 @@ Rule: no business logic in routers. Services raise `AppError` subclasses
 
 **Sessions** are server-side. The browser holds a random 256-bit token in the `session` cookie
 (httpOnly, SameSite=Lax, Secure in production, 30 days, extended while used). The database stores
-only its SHA-256 hash. Sign-out deletes the row; a password reset deletes all of a user's rows.
+only its SHA-256 hash. Sign-out deletes the row; a password reset deletes all of a user's rows;
+a password change (`PUT /api/account/password`, needs the current password, locked after too many
+wrong tries) deletes every row except the current browser's.
 Every sign-in creates a new token (no session fixation).
 
 **Flows** (`app/services/auth.py`):
@@ -172,8 +174,22 @@ UI ──GET /api/jobs (or /api/jobs/{id}) every 1 s while a job is queued/runni
 
 - `app/(marketing)` — public pages (phase 3B builds the full landing page)
 - `app/(app)` — the logged-in app inside `AppShell` (sidebar, top bar, main sheet)
-- `components/ui` — design-system primitives (button, dropdown menu, sheet, skeleton, empty state)
-- `config/product.ts` — per-product identity: name, monogram, accent colour, navigation
+- `components/ui` — design-system primitives: button, badge, dialog, confirm dialog, dropdown menu,
+  sheet, field, input, select, skeleton, empty state, toast, data table
+- `hooks/use-data-table.ts` — search / filter / sort / pages in the browser. Same return shape can
+  be fed from a server-paged API later, so `<DataTable>` never changes
+- `hooks/use-form.ts` + `lib/validation.ts` — controlled forms: errors after blur and on submit,
+  first invalid field focused, API 422 field errors mapped under the fields
+- `components/command-palette.tsx` — Ctrl+K / ⌘K: pages from `config/product.ts` + settings pages
+  (permission-filtered), actions, workspace switch, theme. ARIA combobox + listbox
+- `components/onboarding` — "Get started" checklist. Done/not done from
+  `GET /api/organizations/current/onboarding` (loaded on the server, so a hidden checklist never
+  flashes); texts from `config/product.ts`; hidden per person per workspace
+  (`memberships.onboarding_dismissed_at`)
+- `config/product.ts` — per-product identity: name, logo, monogram, accent colours, fonts,
+  navigation, onboarding steps. Becomes `--brand*` CSS variables on `<html>` (never a `<style>` tag)
+- Settings: Account (Profile, Privacy) and Workspace (Workspace, Members, Billing, API keys,
+  Audit log). `SETTINGS_PAGES` in `components/settings/settings-nav.tsx` is the one list.
 - `lib/api` — generated types + typed client (`api`, `unwrap`, `ApiError`)
 - `hooks/use-jobs.ts` — `useRecentJobs`, `useJob`: live job status by polling
 - `components/jobs` — `JobProgress` (reusable job status row) and the dashboard jobs panel
@@ -193,6 +209,7 @@ UI ──GET /api/jobs (or /api/jobs/{id}) every 1 s while a job is queued/runni
 | 1B | generated typed API client, job status table + live UI, CI, pre-commit (done) |
 | 2A | accounts, email verification, password reset, Google, sessions, brute-force protection, workspaces (done) |
 | 2B | invites, role permissions, member management, API keys, audit log, GDPR export/delete (done) |
-| 3 | full design system, settings pages, theming, marketing site, legal pages |
+| 3A | design system (data table, forms, toasts, command palette), settings pages, onboarding, theming (done) |
+| 3B | marketing site, legal pages, analytics, Lighthouse >= 90 |
 | 4 | Stripe billing + usage limits, files, emails, LLM gateway, admin, demo mode |
 | 5 | production deployment on Hetzner, backups, monitoring |

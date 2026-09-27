@@ -8,7 +8,7 @@ import createClient from "openapi-fetch";
 import { cookies } from "next/headers";
 
 import { toApiError } from "./client";
-import type { AuthProviders, InvitePreview, Me } from "./index";
+import type { AuthProviders, InvitePreview, Me, Onboarding } from "./index";
 import type { paths } from "./schema";
 
 const apiUrl = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
@@ -55,5 +55,15 @@ export async function getInvitePreview(
     return { error: toApiError(response.status, error).message };
   } catch {
     return { error: "Can't reach the server right now. Try again in a minute." };
+  }
+}
+
+/** The "Get started" checklist for the active workspace, or null if it can't be loaded. */
+export async function getOnboarding(): Promise<Onboarding | null> {
+  try {
+    const { data } = await (await serverClient()).GET("/api/organizations/current/onboarding");
+    return data ?? null;
+  } catch {
+    return null;
   }
 }

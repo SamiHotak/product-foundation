@@ -26,6 +26,7 @@ from app.models.user import User
 from app.repositories.jobs import JobRepository
 from app.repositories.sessions import SessionRepository
 from app.repositories.users import UserRepository
+from app.services.account import AccountService
 from app.services.api_keys import ApiKeyService
 from app.services.audit import AuditService, RequestMeta
 from app.services.auth import AuthService
@@ -36,6 +37,7 @@ from app.services.google_oauth import GoogleClient, HttpGoogleClient
 from app.services.invites import InviteService
 from app.services.jobs import JobService
 from app.services.members import MemberService
+from app.services.onboarding import OnboardingService
 from app.services.organizations import Caller, OrganizationService, OrgContext
 from app.services.sessions import SessionService
 from app.workers.dispatch import celery_dispatch
@@ -142,11 +144,25 @@ def get_deletion_service(
     return DeletionService(db, settings, email_sender, audit)
 
 
+def get_account_service(
+    db: Db, settings: AppSettings, limiter: Limiter, audit: Audit
+) -> AccountService:
+    """Profile and password service for this request."""
+    return AccountService(db, settings, limiter, audit)
+
+
+def get_onboarding_service(db: Db) -> OnboardingService:
+    """Onboarding checklist service for this request."""
+    return OnboardingService(db)
+
+
 Members = Annotated[MemberService, Depends(get_member_service)]
 Invites = Annotated[InviteService, Depends(get_invite_service)]
 ApiKeys = Annotated[ApiKeyService, Depends(get_api_key_service)]
 Exports = Annotated[ExportService, Depends(get_export_service)]
 Deletions = Annotated[DeletionService, Depends(get_deletion_service)]
+Accounts = Annotated[AccountService, Depends(get_account_service)]
+Onboarding = Annotated[OnboardingService, Depends(get_onboarding_service)]
 
 
 # --- who is calling -----------------------------------------------------------------------

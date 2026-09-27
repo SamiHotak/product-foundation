@@ -21,7 +21,8 @@
 /*
  * Design tokens.
  * Base: cool mist neutrals and deep slate ink (never pure black), one accent.
- * The accent comes from config/product.ts (injected as --brand in app/layout.tsx).
+ * Accent and fonts come from config/product.ts (set as --brand* variables on <html>
+ * in app/layout.tsx). Change them there, not here.
  */
 :root {
   --canvas: #f1f3f6; /* app background, sidebar */
@@ -32,7 +33,7 @@
   --line: #dde2ea; /* borders */
   --line-strong: #c5ccd8;
   --accent: var(--brand, #244ba6);
-  --accent-ink: #ffffff; /* text on accent */
+  --accent-ink: var(--brand-ink, #ffffff); /* text on accent */
   --accent-soft: color-mix(in oklab, var(--accent) 10%, var(--surface));
   --success: #17804f;
   --warning: #9a6512;
@@ -50,7 +51,7 @@
   --line: #252d40;
   --line-strong: #344058;
   --accent: var(--brand-dark, #86a4f4);
-  --accent-ink: #0d1220;
+  --accent-ink: var(--brand-ink-dark, #0d1220);
   --accent-soft: color-mix(in oklab, var(--accent) 14%, var(--surface));
   --success: #4cc38a;
   --warning: #e0a43c;
@@ -67,7 +68,7 @@
     --line: #252d40;
     --line-strong: #344058;
     --accent: var(--brand-dark, #86a4f4);
-    --accent-ink: #0d1220;
+    --accent-ink: var(--brand-ink-dark, #0d1220);
     --accent-soft: color-mix(in oklab, var(--accent) 14%, var(--surface));
     --success: #4cc38a;
     --warning: #e0a43c;
@@ -91,7 +92,11 @@
   --color-danger: var(--danger);
   --color-ring: var(--ring);
 
-  --font-sans: "Hanken Grotesk Variable", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-sans:
+    var(--brand-font, "Hanken Grotesk Variable"), ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-heading:
+    var(--brand-font-heading, var(--brand-font, "Hanken Grotesk Variable")), ui-sans-serif,
+    system-ui, "Segoe UI", sans-serif;
 
   /* Radius hierarchy: small controls < menus < the main sheet. */
   --radius-control: 6px;
@@ -126,6 +131,11 @@
     font-feature-settings: "ss01", "cv11";
     -webkit-font-smoothing: antialiased;
   }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-heading);
+  }
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
@@ -142,4 +152,22 @@
 
 @utility tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* Keyboard shortcut hint, e.g. <kbd>Ctrl</kbd> <kbd>K</kbd>. */
+@utility kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding-inline: 0.3rem;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink-muted);
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1;
 }

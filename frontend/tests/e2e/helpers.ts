@@ -60,3 +60,18 @@ export async function signUpAndSignIn(page: Page, name = "Test User"): Promise<s
   expect(verify.status()).toBe(200);
   return email;
 }
+
+/** Every browser console error and page crash (tests expect this list to stay empty). */
+export function collectErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error") errors.push(msg.text());
+  });
+  page.on("pageerror", (err) => errors.push(err.message));
+  return errors;
+}
+
+/** The toast area ("Name saved.", "Key revoked."). */
+export function toasts(page: Page) {
+  return page.getByRole("region", { name: "Notifications" });
+}

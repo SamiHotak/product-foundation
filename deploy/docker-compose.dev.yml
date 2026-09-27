@@ -87,10 +87,13 @@ services:
       # `make api-client` writes the OpenAPI schema here for the frontend.
       - ../frontend/lib/api:/frontend-api
     # Apply migrations, then start the API with auto-reload.
+    # --timeout-keep-alive 65: keep idle connections open longer than the Next.js proxy does
+    # (~5 s). With equal timeouts the proxy sometimes reuses a connection uvicorn just closed,
+    # and the browser gets a random 500 "socket hang up".
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-             --proxy-headers --forwarded-allow-ips='*'"
+             --proxy-headers --forwarded-allow-ips='*' --timeout-keep-alive 65"
     ports:
       - "8000:8000"
     healthcheck:

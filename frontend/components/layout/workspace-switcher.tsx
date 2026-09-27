@@ -5,9 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { useSession } from "@/components/session-provider";
-import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { CreateWorkspaceDialog } from "@/components/layout/create-workspace-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,8 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { toast } from "@/components/ui/toast";
 import { api, errorMessage, unwrap } from "@/lib/api";
 
 const ROLE_LABEL = { owner: "Owner", admin: "Admin", member: "Member" } as const;
@@ -27,7 +24,6 @@ export function WorkspaceSwitcher() {
   const router = useRouter();
   const { organizations, activeOrganization } = useSession();
   const [creating, setCreating] = useState(false);
-  const [switchError, setSwitchError] = useState<string | null>(null);
 
   async function switchTo(id: string) {
     if (id === activeOrganization.id) return;
@@ -35,7 +31,7 @@ export function WorkspaceSwitcher() {
       await unwrap(api.PUT("/api/auth/session/organization", { body: { organization_id: id } }));
       router.refresh();
     } catch (err) {
-      setSwitchError(errorMessage(err));
+      toast.error("Could not switch the workspace.", { description: errorMessage(err) });
     }
   }
 
@@ -68,65 +64,7 @@ export function WorkspaceSwitcher() {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      {switchError && (
-        <span className="sr-only" role="alert">
-          {switchError}
-        </span>
-      )}
       <CreateWorkspaceDialog open={creating} onOpenChange={setCreating} />
     </>
-  );
-}
-
-function CreateWorkspaceDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const name = String(new FormData(event.currentTarget).get("name") ?? "").trim();
-    if (!name) return setError("Give the workspace a name.");
-    setBusy(true);
-    setError(null);
-    try {
-      await unwrap(api.POST("/api/organizations", { body: { name } }));
-      onOpenChange(false);
-      router.refresh(); // the new workspace is now the active one
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        title="Create a workspace"
-        description="A separate space with its own data, for example one per client or team."
-      >
-        <form onSubmit={onSubmit} className="space-y-4" noValidate>
-          {error && <Alert tone="error">{error}</Alert>}
-          <Field label="Workspace name">
-            {(a) => <Input {...a} autoFocus maxLength={80} name="name" placeholder="Acme GmbH" />}
-          </Field>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={busy}>
-              {busy ? "Creating…" : "Create workspace"}
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

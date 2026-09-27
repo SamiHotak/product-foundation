@@ -41,3 +41,9 @@ class SessionRepository:
     async def delete_all_for_user(self, user_id: uuid.UUID) -> None:
         """Sign out everywhere (after a password reset)."""
         await self._session.execute(delete(UserSession).where(UserSession.user_id == user_id))
+
+    async def delete_others_for_user(self, user_id: uuid.UUID, keep_id: uuid.UUID) -> None:
+        """Sign out every other browser (after a password change), keep this one."""
+        await self._session.execute(
+            delete(UserSession).where(UserSession.user_id == user_id, UserSession.id != keep_id)
+        )

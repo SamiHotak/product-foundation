@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, errorMessage, unwrap, type ExampleJobCreate, type Job } from "@/lib/api";
+import { ONBOARDING_REFRESH } from "@/lib/events";
 
 /** Queued or running: the job will still change. */
 export function isActive(job: Pick<Job, "status">): boolean {
@@ -78,6 +79,7 @@ export function useRecentJobs({ limit = 8, intervalMs = 1000 } = {}) {
       setStartError(null);
       try {
         const job = await unwrap(api.POST("/api/jobs/example", { body }));
+        window.dispatchEvent(new Event(ONBOARDING_REFRESH)); // "Run a job" step may be done now
         // Show the new job immediately; polling takes over from here.
         setState((prev) => ({
           ...prev,

@@ -29,7 +29,14 @@ test("phone: sign-in page fits the screen", async ({ page }) => {
 
 test("phone: settings pages fit the screen", async ({ page }) => {
   await signUpAndSignIn(page);
-  for (const path of ["/settings/workspace", "/settings/api-keys", "/settings/privacy"]) {
+  for (const path of [
+    "/settings",
+    "/settings/workspace",
+    "/settings/members",
+    "/settings/billing",
+    "/settings/api-keys",
+    "/settings/privacy",
+  ]) {
     await page.goto(path);
     await expect(page.getByRole("navigation", { name: "Settings" })).toBeVisible();
     const overflow = await page.evaluate(

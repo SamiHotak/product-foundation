@@ -185,6 +185,8 @@ async def test_brute_force_lock_after_5_failures(world: World) -> None:
 
 
 async def test_per_ip_limit(world: World) -> None:
+    # Fixed limit: docker-compose.dev.yml raises it to 300 for the browser tests.
+    world.settings(auth_requests_per_minute_per_ip=20)
     async with world.client() as c:
         codes = [
             (

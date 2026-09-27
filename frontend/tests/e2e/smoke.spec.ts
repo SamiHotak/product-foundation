@@ -90,6 +90,8 @@ test("pages load without console errors, in light and dark mode", async ({ page 
       "/dashboard",
       "/settings",
       "/settings/workspace",
+      "/settings/members",
+      "/settings/billing",
       "/settings/api-keys",
       "/settings/audit-log",
       "/settings/privacy",

@@ -1,14 +1,48 @@
-"""The signed-in person's own account: data export and deletion (GDPR)."""
+"""The signed-in person's own account: profile, password, data export and deletion (GDPR)."""
 
 import uuid
 
 from fastapi import APIRouter, Response, status
 
-from app.routers.deps import CurrentUser, Deletions, Exports, OrgCtx
+from app.routers.deps import Accounts, CurrentUser, Deletions, Exports, OrgCtx
+from app.schemas.account import PasswordChange, ProfileUpdate
+from app.schemas.auth import UserRead
 from app.schemas.errors import error_responses
 from app.schemas.privacy import DeletionRequest, DeletionStatus, ExportList, ExportRead
+from app.services.organizations import user_read
 
 router = APIRouter(tags=["account"])
+
+
+@router.patch(
+    "/account/profile",
+    response_model=UserRead,
+    responses=error_responses(401),
+    summary="Change my name",
+)
+async def update_profile(data: ProfileUpdate, current: CurrentUser, accounts: Accounts) -> UserRead:
+    """Your name as the team sees it (members list, emails, audit log)."""
+    user = await accounts.update_profile(current.user, name=data.name)
+    return user_read(user)
+
+
+@router.put(
+    "/account/password",
+    response_model=UserRead,
+    responses=error_responses(400, 401, 429),
+    summary="Change my password",
+)
+async def change_password(
+    data: PasswordChange, current: CurrentUser, accounts: Accounts
+) -> UserRead:
+    """Needs the current password (not for Google-only accounts). Signs out other browsers."""
+    user = await accounts.change_password(
+        current.user,
+        current.session,
+        current_password=data.current_password,
+        new_password=data.new_password,
+    )
+    return user_read(user)
 
 
 @router.post(

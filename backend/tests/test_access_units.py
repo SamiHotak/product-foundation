@@ -31,7 +31,11 @@ from app.services.organizations import Caller
 def test_roles_are_nested_member_admin_owner() -> None:
     member, admin, owner = (ROLE_PERMISSIONS[r] for r in ("member", "admin", "owner"))
     assert member < admin < owner
-    assert owner - admin == {Permission.ORG_DELETE, Permission.OWNERSHIP_TRANSFER}
+    assert owner - admin == {
+        Permission.ORG_DELETE,
+        Permission.OWNERSHIP_TRANSFER,
+        Permission.BILLING_MANAGE,
+    }
     assert Permission.MEMBERS_INVITE not in member
     assert role_permissions("nonsense") == frozenset()
 
@@ -40,6 +44,7 @@ def test_api_key_scopes_are_safe_and_match_the_schema() -> None:
     # Keys can only do what a normal member can do: never manage the team or keys.
     assert ROLE_PERMISSIONS["member"] >= API_KEY_SCOPES
     assert Permission.API_KEYS_MANAGE not in API_KEY_SCOPES
+    assert Permission.BILLING_MANAGE not in API_KEY_SCOPES
     # The API schema lists exactly these scopes (update both together).
     assert set(typing.get_args(ApiKeyScope)) == {p.value for p in API_KEY_SCOPES}
 
