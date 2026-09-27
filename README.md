@@ -112,7 +112,7 @@ The "Continue with Google" button appears only after you add your keys.
 
 ## Your team (invites and roles)
 
-**Settings → Workspace**: invite people by email as *member* or *admin*. The email lands in
+**Settings → Members**: invite people by email as *member* or *admin*. The email lands in
 Mailpit (http://localhost:8025). Open the link in another browser (or a private window):
 a new person creates an account right there; an existing user signs in and clicks **Join**.
 
@@ -120,7 +120,7 @@ a new person creates an account right there; an existing user signs in and click
 | --- | --- |
 | Member | use the product, see the team |
 | Admin | + invite, change roles, remove people, API keys, audit log, export workspace data |
-| Owner | + delete the workspace, make someone else the owner (one owner per workspace) |
+| Owner | + delete the workspace, billing, make someone else the owner (one owner per workspace) |
 
 The rules are in one file: `backend/app/core/permissions.py`.
 
@@ -233,9 +233,36 @@ Other errors show a safe message to the user; the full error is in `make logs s=
 Jobs belong to the active workspace: start them with
 `JobService.enqueue(kind, params, organization_id=ctx.organization.id, created_by_id=ctx.user.id)`.
 
-## Change the product name and colour
+## Make it your product (theming)
 
-Edit `frontend/config/product.ts` (name, tagline, monogram, accent colours, menu items).
+Everything that makes a product look like itself is in **one file**: `frontend/config/product.ts`.
+
+1. `name`, `tagline`, `monogram` — shown in the sidebar, tab title and tab icon.
+2. `logo` — optional. Put `logo.svg` (and `logo-dark.svg`) in `frontend/public/` and set
+   `logo: { src: "/logo.svg", darkSrc: "/logo-dark.svg", width: 120, height: 28, wordmark: true }`.
+3. `accent` — two hex colours (light and dark mode). Check contrast >= 4.5:1.
+4. `fonts` — install a font (`npm install @fontsource-variable/inter` inside the frontend container:
+   `docker compose -f deploy/docker-compose.dev.yml exec frontend npm install @fontsource-variable/inter`),
+   change the `import` at the top of the file, and set `fonts: { sans: "Inter Variable" }`.
+5. `nav` / `navFooter` — sidebar items. `needs: "billing:manage"` hides an item from people without
+   that permission. The command palette (Ctrl+K) finds them automatically.
+6. `onboarding` — the "Get started" steps on the dashboard (see `backend/app/services/onboarding.py`).
+
+Also set `APP_NAME` in `deploy/docker-compose.dev.yml` (the name in emails).
+
+## Design system (for building product pages)
+
+| Need | Use |
+| --- | --- |
+| A list with search, sort, filter, pages | `useDataTable` (`hooks/use-data-table.ts`) + `<DataTable>` |
+| A form with validation | `useForm` (`hooks/use-form.ts`) + rules from `lib/validation.ts` + `<Field>` |
+| "Saved." / "Revoked." after an action | `toast.success(...)`, `toast.error(...)` (`components/ui/toast.tsx`) |
+| "Are you sure?" | `<ConfirmDialog>`; other dialogs: `<Dialog>` + `<DialogContent>` |
+| Nothing there yet | `<EmptyState>` with one clear next action |
+| Loading | `<Skeleton>` (the data table shows skeleton rows by itself) |
+| Status / role label | `<Badge>` |
+
+Errors about a form stay next to the field; toasts are for results of actions.
 
 ---
 
