@@ -3,14 +3,18 @@ import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 
+import { Analytics } from "@/components/analytics";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/toast";
 import { brandStyle, product } from "@/config/product";
+import { siteUrl } from "@/lib/site";
 import { parseTheme, THEME_COOKIE, themeClass } from "@/lib/theme";
 
 export const metadata: Metadata = {
-  title: { default: product.name, template: `%s · ${product.name}` },
+  metadataBase: new URL(siteUrl),
+  title: { default: `${product.name}: ${product.tagline}`, template: `%s · ${product.name}` },
   description: product.tagline,
+  openGraph: { type: "website", siteName: product.name },
 };
 
 export const viewport: Viewport = {
@@ -36,6 +40,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <ThemeProvider initialTheme={theme}>
           {children}
           <Toaster />
+          <Analytics />
         </ThemeProvider>
       </body>
     </html>

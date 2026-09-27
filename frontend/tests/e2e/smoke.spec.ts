@@ -14,7 +14,7 @@ test.beforeEach(async ({ page }, testInfo) => {
 
 test("landing page links to sign in", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("link", { name: "Sign in" }).click();
+  await page.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole("heading", { name: "Sign in", level: 1 })).toBeVisible();
 });

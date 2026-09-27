@@ -6,6 +6,7 @@ the validator refuses to start in production with the dev secret key.
 
 from enum import StrEnum
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -94,6 +95,14 @@ class Settings(BaseSettings):
     export_retention_days: int = 7  # data export ZIPs are deleted after this
     audit_retention_days: int = 365  # audit log entries older than this are deleted
 
+    # Cookie-less website analytics (Plausible or Umami). "none" = off (the default).
+    # The browser sends page views to our own API; the API forwards them. So there is no
+    # third-party script on the page and nothing is stored in the visitor's browser.
+    analytics_provider: Literal["none", "plausible", "umami"] = "none"
+    analytics_host: str = ""  # e.g. https://plausible.io or https://cloud.umami.is
+    analytics_site: str = ""  # Plausible: your domain. Umami: the website id.
+    analytics_events_per_minute_per_ip: int = 120
+
     @model_validator(mode="after")
     def _fill_defaults_and_check(self) -> "Settings":
         if self.celery_broker_url is None:
@@ -103,6 +112,11 @@ class Settings(BaseSettings):
         if self.session_cookie_secure is None:
             self.session_cookie_secure = self.environment is Environment.PRODUCTION
         self.app_url = self.app_url.rstrip("/")
+        self.analytics_host = self.analytics_host.strip().rstrip("/")
+        if self.analytics_provider != "none" and not (self.analytics_host and self.analytics_site):
+            raise ValueError("ANALYTICS_HOST and ANALYTICS_SITE are needed when analytics is on.")
+        if self.analytics_host and not self.analytics_host.startswith(("https://", "http://")):
+            raise ValueError("ANALYTICS_HOST must start with https://")
         if (
             self.environment is Environment.PRODUCTION
             and self.secret_key.get_secret_value() == DEV_SECRET_KEY

@@ -27,6 +27,17 @@ export default async function SignupPage() {
       />
       {providers.google && <GoogleButton />}
       <SignupForm />
+      <p className="mt-5 text-xs text-ink-muted">
+        By creating an account you accept the{" "}
+        <Link href="/legal/terms" className="underline hover:text-ink">
+          Terms
+        </Link>
+        . Read how we handle your data in the{" "}
+        <Link href="/legal/privacy" className="underline hover:text-ink">
+          Privacy policy
+        </Link>
+        .
+      </p>
     </>
   );
 }

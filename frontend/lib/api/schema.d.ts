@@ -832,10 +832,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/billing/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Plans and prices
+         * @description Public: the plans shown on the website. No sign-in needed.
+         */
+        get: operations["list_plans"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/event": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record a page view
+         * @description Public. Always answers 204; the event is forwarded after the response (if on).
+         */
+        post: operations["record_event"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AnalyticsEvent
+         * @description One page view or custom event. Holds no personal data by design.
+         */
+        AnalyticsEvent: {
+            /**
+             * Name
+             * @description "pageview" or a custom event.
+             * @default pageview
+             */
+            name?: string;
+            /**
+             * Path
+             * @description Page path only. Query strings and #fragments are removed on the server too.
+             */
+            path: string;
+            /**
+             * Referrer
+             * @description The page the visitor came from. Only its origin is kept.
+             */
+            referrer?: string | null;
+            /** Props */
+            props?: {
+                [key: string]: string;
+            };
+        };
         /**
          * ApiKeyCreate
          * @description Create a key. The secret is shown once in the response.
@@ -1482,6 +1548,64 @@ export interface components {
          * @enum {string}
          */
         Permission: "org:update" | "org:delete" | "org:export" | "ownership:transfer" | "members:read" | "members:invite" | "members:manage" | "api_keys:manage" | "audit:read" | "billing:manage" | "jobs:read" | "jobs:write";
+        /**
+         * PlanLimitsOut
+         * @description What a workspace on this plan may use. null = unlimited.
+         */
+        PlanLimitsOut: {
+            /** Members */
+            members: number | null;
+            /** Jobs Per Month */
+            jobs_per_month: number | null;
+            /** Api Keys */
+            api_keys: number | null;
+        };
+        /**
+         * PlanOut
+         * @description One plan as shown on the pricing page.
+         */
+        PlanOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /**
+             * Price Monthly
+             * @description Cents per month when billed monthly.
+             */
+            price_monthly: number;
+            /**
+             * Price Yearly
+             * @description Cents per year when billed yearly.
+             */
+            price_yearly: number;
+            /** Trial Days */
+            trial_days: number;
+            /** Highlighted */
+            highlighted: boolean;
+            /** Contact Sales */
+            contact_sales: boolean;
+            /** Features */
+            features: string[];
+            limits: components["schemas"]["PlanLimitsOut"];
+        };
+        /**
+         * PlansResponse
+         * @description Everything the pricing page needs.
+         */
+        PlansResponse: {
+            /**
+             * Currency
+             * @enum {string}
+             */
+            currency: "eur" | "usd" | "gbp" | "chf";
+            /** Prices Include Vat */
+            prices_include_vat: boolean;
+            /** Plans */
+            plans: components["schemas"]["PlanOut"][];
+        };
         /**
          * ProfileUpdate
          * @description Change your display name. (Changing the email address needs a new verification flow.)
@@ -4399,6 +4523,84 @@ export interface operations {
             };
             /** @description Too many requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unexpected server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_plans: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlansResponse"];
+                };
+            };
+            /** @description Some fields are invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unexpected server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    record_event: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnalyticsEvent"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Some fields are invalid */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

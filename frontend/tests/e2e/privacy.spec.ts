@@ -7,6 +7,8 @@ import { signUpAndSignIn, waitForEmail } from "./helpers";
 test("export my data and download the ZIP", async ({ page }) => {
   await signUpAndSignIn(page, "Dana Data");
   await page.goto("/settings/privacy");
+  // Wait until React is ready: a click on the server-rendered button before that is lost.
+  await page.waitForLoadState("networkidle");
   const block = page.getByRole("region", { name: "Download your data" });
   await block.getByRole("button", { name: "Export my data" }).click();
 

@@ -45,3 +45,38 @@ test("phone: settings pages fit the screen", async ({ page }) => {
     expect(overflow, path).toBeLessThanOrEqual(0);
   }
 });
+
+test("phone: every public page fits the screen", async ({ page }) => {
+  for (const path of [
+    "/",
+    "/pricing",
+    "/legal/imprint",
+    "/legal/privacy",
+    "/legal/terms",
+    "/legal/dpa",
+    "/signup",
+    "/forgot-password",
+  ]) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, path).toBeLessThanOrEqual(0);
+  }
+});
+
+test("phone: website menu opens, and closes after choosing a link", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Open menu").click();
+  const menu = page.getByRole("navigation", { name: "Website menu" });
+  await expect(menu).toBeVisible();
+  await menu.getByRole("link", { name: "Pricing" }).click();
+  await expect(page).toHaveURL(/\/pricing$/);
+  await expect(menu).toBeHidden();
+  // Escape closes it too.
+  await page.getByLabel("Open menu").click();
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+});

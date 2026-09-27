@@ -37,3 +37,6 @@ export type AuditEntry = Schemas["AuditEntry"];
 export type DataExport = Schemas["ExportRead"];
 export type Onboarding = Schemas["OnboardingStatus"];
 export type OnboardingStep = Schemas["OnboardingStep"];
+export type Plan = Schemas["PlanOut"];
+export type Plans = Schemas["PlansResponse"];
+export type AnalyticsEvent = Schemas["AnalyticsEvent"];

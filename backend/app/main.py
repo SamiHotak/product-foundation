@@ -18,9 +18,11 @@ from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestContextMiddleware
 from app.db.session import get_async_engine
 from app.routers import (
+    analytics,
     api_keys,
     audit,
     auth,
+    billing,
     health,
     invites,
     jobs,
@@ -94,6 +96,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(api_keys.router)
     api.include_router(audit.router)
     api.include_router(jobs.router)
+    api.include_router(billing.router)
+    api.include_router(analytics.router)
     app.include_router(api)
 
     return app

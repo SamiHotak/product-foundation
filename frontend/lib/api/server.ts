@@ -8,7 +8,7 @@ import createClient from "openapi-fetch";
 import { cookies } from "next/headers";
 
 import { toApiError } from "./client";
-import type { AuthProviders, InvitePreview, Me, Onboarding } from "./index";
+import type { AuthProviders, InvitePreview, Me, Onboarding, Plans } from "./index";
 import type { paths } from "./schema";
 
 const apiUrl = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
@@ -62,6 +62,22 @@ export async function getInvitePreview(
 export async function getOnboarding(): Promise<Onboarding | null> {
   try {
     const { data } = await (await serverClient()).GET("/api/organizations/current/onboarding");
+    return data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Plans and prices for the pricing section (public, no cookies needed), or null if the API
+ * can't be reached. The page then shows a short "prices could not be loaded" note.
+ */
+export async function getPlans(): Promise<Plans | null> {
+  try {
+    const client = createClient<paths>({ baseUrl: apiUrl, cache: "no-store" });
+    const { data } = await client.GET("/api/billing/plans", {
+      signal: AbortSignal.timeout(3000),
+    });
     return data ?? null;
   } catch {
     return null;

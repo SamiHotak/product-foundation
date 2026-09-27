@@ -244,11 +244,50 @@ Everything that makes a product look like itself is in **one file**: `frontend/c
 4. `fonts` — install a font (`npm install @fontsource-variable/inter` inside the frontend container:
    `docker compose -f deploy/docker-compose.dev.yml exec frontend npm install @fontsource-variable/inter`),
    change the `import` at the top of the file, and set `fonts: { sans: "Inter Variable" }`.
+   Then update the `Brand Fallback` numbers at the top of `app/globals.css` (they stop the text
+   from jumping while the font loads). Ask Claude to compute them for the new font, or use
+   https://screenspan.net/fallback.
 5. `nav` / `navFooter` — sidebar items. `needs: "billing:manage"` hides an item from people without
    that permission. The command palette (Ctrl+K) finds them automatically.
 6. `onboarding` — the "Get started" steps on the dashboard (see `backend/app/services/onboarding.py`).
 
 Also set `APP_NAME` in `deploy/docker-compose.dev.yml` (the name in emails).
+
+## The website (landing page, pricing, legal pages)
+
+Open http://localhost:3000 (signed out). Four files decide what it says:
+
+| File | What it holds |
+| --- | --- |
+| `frontend/config/marketing.ts` | headline, demo video, features, "how it works", FAQ, closing call to action |
+| `backend/app/core/plans.py` | plans, prices (in cents), limits, trial days, VAT note. The pricing section reads them from `GET /api/billing/plans`, and phase 4A charges and enforces the same list |
+| `frontend/config/legal.ts` | your name, address, VAT id, data protection authority, service providers |
+| `frontend/config/product.ts` | name, logo, colours (see above) |
+
+**Demo video:** put `demo.mp4` (H.264) and `demo-poster.jpg` in `frontend/public/`, then in
+`marketing.ts` set `video: { src: "/demo.mp4", poster: "/demo-poster.jpg", width: 1920, height: 1080 }`.
+It loads only when someone presses play, so the page stays fast. Keep it under ~20 MB (move it to
+object storage in phase 5 if bigger). Don't embed YouTube/Vimeo: they set cookies before anyone
+clicks, which needs a cookie banner in the EU.
+
+**Legal pages** (`/legal/imprint`, `/legal/privacy`, `/legal/terms`, `/legal/dpa`) are templates.
+Every page shows a yellow warning box until you fill in `config/legal.ts`, get the texts checked,
+and set `reviewed: true`. Read `docs/LEGAL_TEMPLATES.md` first.
+
+**Visitor statistics (optional, no cookies):** off by default. To turn on, add to `backend/.env`:
+
+```
+ANALYTICS_PROVIDER=plausible          # or umami
+ANALYTICS_HOST=https://plausible.io   # Umami Cloud: https://cloud.umami.is
+ANALYTICS_SITE=your-domain.com        # Umami: the website id
+```
+
+The browser sends page views to our own API, which forwards them. No third-party script, no
+cookies, only the page path (never `?token=...`). Send a custom event from any client component
+with `track("signup")` from `frontend/lib/analytics.ts`.
+
+**Search engines:** `/robots.txt` and `/sitemap.xml` are generated. Set `APP_URL` for the frontend
+to your real domain in production (phase 5). Add new public pages to `frontend/app/sitemap.ts`.
 
 ## Design system (for building product pages)
 

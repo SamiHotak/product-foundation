@@ -208,6 +208,7 @@ test("data table: pages, search, sort, clear", async ({ page }) => {
     expect(res.status()).toBe(201);
   }
   await page.goto("/settings/api-keys");
+  await page.waitForLoadState("networkidle"); // React ready before typing and clicking
   const table = page.getByRole("table", { name: "API keys" });
   const rows = table.locator("tbody tr");
   await expect(rows).toHaveCount(10);

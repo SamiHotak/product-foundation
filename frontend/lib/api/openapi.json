@@ -3320,10 +3320,146 @@
           }
         }
       }
+    },
+    "/api/billing/plans": {
+      "get": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Plans and prices",
+        "description": "Public: the plans shown on the website. No sign-in needed.",
+        "operationId": "list_plans",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlansResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some fields are invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/event": {
+      "post": {
+        "tags": [
+          "analytics"
+        ],
+        "summary": "Record a page view",
+        "description": "Public. Always answers 204; the event is forwarded after the response (if on).",
+        "operationId": "record_event",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyticsEvent"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Some fields are invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AnalyticsEvent": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$",
+            "title": "Name",
+            "description": "\"pageview\" or a custom event.",
+            "default": "pageview"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "pattern": "^/",
+            "title": "Path",
+            "description": "Page path only. Query strings and #fragments are removed on the server too."
+          },
+          "referrer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrer",
+            "description": "The page the visitor came from. Only its origin is kept."
+          },
+          "props": {
+            "patternProperties": {
+              "^[a-z][a-z0-9_]{0,29}$": {
+                "type": "string",
+                "maxLength": 100
+              }
+            },
+            "type": "object",
+            "maxProperties": 10,
+            "title": "Props"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "AnalyticsEvent",
+        "description": "One page view or custom event. Holds no personal data by design."
+      },
       "ApiKeyCreate": {
         "properties": {
           "name": {
@@ -4662,6 +4798,147 @@
         ],
         "title": "Permission",
         "description": "Something a caller may be allowed to do in a workspace."
+      },
+      "PlanLimitsOut": {
+        "properties": {
+          "members": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Members"
+          },
+          "jobs_per_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jobs Per Month"
+          },
+          "api_keys": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Keys"
+          }
+        },
+        "type": "object",
+        "required": [
+          "members",
+          "jobs_per_month",
+          "api_keys"
+        ],
+        "title": "PlanLimitsOut",
+        "description": "What a workspace on this plan may use. null = unlimited."
+      },
+      "PlanOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "price_monthly": {
+            "type": "integer",
+            "title": "Price Monthly",
+            "description": "Cents per month when billed monthly."
+          },
+          "price_yearly": {
+            "type": "integer",
+            "title": "Price Yearly",
+            "description": "Cents per year when billed yearly."
+          },
+          "trial_days": {
+            "type": "integer",
+            "title": "Trial Days"
+          },
+          "highlighted": {
+            "type": "boolean",
+            "title": "Highlighted"
+          },
+          "contact_sales": {
+            "type": "boolean",
+            "title": "Contact Sales"
+          },
+          "features": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Features"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/PlanLimitsOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "price_monthly",
+          "price_yearly",
+          "trial_days",
+          "highlighted",
+          "contact_sales",
+          "features",
+          "limits"
+        ],
+        "title": "PlanOut",
+        "description": "One plan as shown on the pricing page."
+      },
+      "PlansResponse": {
+        "properties": {
+          "currency": {
+            "type": "string",
+            "enum": [
+              "eur",
+              "usd",
+              "gbp",
+              "chf"
+            ],
+            "title": "Currency"
+          },
+          "prices_include_vat": {
+            "type": "boolean",
+            "title": "Prices Include Vat"
+          },
+          "plans": {
+            "items": {
+              "$ref": "#/components/schemas/PlanOut"
+            },
+            "type": "array",
+            "title": "Plans"
+          }
+        },
+        "type": "object",
+        "required": [
+          "currency",
+          "prices_include_vat",
+          "plans"
+        ],
+        "title": "PlansResponse",
+        "description": "Everything the pricing page needs."
       },
       "ProfileUpdate": {
         "properties": {

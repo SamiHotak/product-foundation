@@ -20,7 +20,9 @@ export function ProductMark({
   return (
     <Link
       href={href}
-      aria-label={`${product.name} home`}
+      // With the name visible, the accessible name starts with that text ("Foundation home"),
+      // so voice control ("click Foundation") works. Without it, a label names the link.
+      aria-label={showName ? undefined : `${product.name} home`}
       className="inline-flex items-center gap-2.5 rounded-control px-1 py-1"
     >
       {logo ? (
@@ -61,6 +63,7 @@ export function ProductMark({
           className={cn("font-semibold tracking-tight", size === "lg" ? "text-xl" : "text-[15px]")}
         >
           {product.name}
+          <span className="sr-only"> home</span>
         </span>
       )}
     </Link>

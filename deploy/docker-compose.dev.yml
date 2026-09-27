@@ -129,6 +129,8 @@ services:
     image: foundation-frontend:dev
     environment:
       API_INTERNAL_URL: http://backend:8000
+      # Public address of the website (sitemap.xml, robots.txt, link previews).
+      APP_URL: http://localhost:3000
       WATCHPACK_POLLING: "true"
       NEXT_TELEMETRY_DISABLED: "1"
     ports:

@@ -202,6 +202,42 @@ UI ──GET /api/jobs (or /api/jobs/{id}) every 1 s while a job is queued/runni
   browser extension changes the page, React re-renders it on the client and logs an error.
   E2E tests cover console errors, the extension case, and the saved theme.
 
+## Website, plans and analytics (phase 3B)
+
+**Pages** live in `app/(marketing)` with their own layout (`SiteHeader`, `SiteFooter`):
+`/` landing, `/pricing`, `/legal/imprint|privacy|terms|dpa`. Server components; the only
+JavaScript is the phone menu's "close after tap". FAQ and the phone menu use `<details>`, so they
+work before (or without) JavaScript. The header only checks that a `session` cookie *exists*
+(no API call) to show "Open the app".
+
+**Plans** have one source: `backend/app/core/plans.py` → `BillingService.public_plans()` →
+`GET /api/billing/plans` (public, `Cache-Control: max-age=300`) → `getPlans()` in
+`lib/api/server.ts` (3 s timeout; the page shows a short note instead of crashing if the API is
+down). Phase 4A adds Stripe price ids (env vars) and limit checks on the same plan ids.
+
+**Analytics** (cookie-less, optional):
+
+```
+<Analytics/> (root layout, on route change)
+  └─ POST /api/analytics/event {name, path, referrer-origin}   same origin, keepalive
+       └─ FastAPI: 204 at once; rate limit per IP (120/min, dropped quietly)
+            └─ background task → Plausible /api/event  or  Umami /api/send
+               (User-Agent + X-Forwarded-For so the provider can count unique visitors)
+```
+
+Privacy is enforced twice (browser AND server): query strings and fragments are removed from the
+path, only the referrer's origin is kept, props are limited (10 keys, 100 chars). Browsers with
+Do Not Track / Global Privacy Control send nothing. No third-party script means no `<script>`
+tag rendered by React and a simple Content-Security-Policy later.
+
+**SEO:** `app/robots.ts`, `app/sitemap.ts` (use `APP_URL` at runtime, not build time),
+`app/opengraph-image.tsx` (share picture from the product config), `metadataBase` in the root layout.
+
+**Measured** (production build on my machine, Lighthouse 12, phone preset with slow 4G):
+performance 95–99 on every public page (landing 95–98, desktop 100), accessibility, best
+practices and SEO 100. Layout shift ~0 thanks to the metric-matched `Brand Fallback` font in
+`globals.css`. Re-measure on the real server in phase 5.
+
 ## Planned by phase
 
 | Phase | Adds |
@@ -210,6 +246,6 @@ UI ──GET /api/jobs (or /api/jobs/{id}) every 1 s while a job is queued/runni
 | 2A | accounts, email verification, password reset, Google, sessions, brute-force protection, workspaces (done) |
 | 2B | invites, role permissions, member management, API keys, audit log, GDPR export/delete (done) |
 | 3A | design system (data table, forms, toasts, command palette), settings pages, onboarding, theming (done) |
-| 3B | marketing site, legal pages, analytics, Lighthouse >= 90 |
+| 3B | marketing site, pricing from plans config, legal page templates, cookie-less analytics, SEO files (done) |
 | 4 | Stripe billing + usage limits, files, emails, LLM gateway, admin, demo mode |
 | 5 | production deployment on Hetzner, backups, monitoring |
