@@ -13,6 +13,19 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 os.environ.setdefault("ENVIRONMENT", "test")
+# Tests must not depend on YOUR machine: `make test` runs inside the dev container, which has
+# BILLING_DEV_TOOLS=true, and backend/.env may hold Stripe or email keys. Environment variables
+# win over .env, so these values switch all of that off. Tests that need it turn it on
+# themselves (e.g. build_world(billing_dev_tools=True)).
+for _name, _value in {
+    "BILLING_DEV_TOOLS": "false",
+    "STRIPE_SECRET_KEY": "",
+    "STRIPE_WEBHOOK_SECRET": "",
+    "STRIPE_PREFIX": "foundation",
+    "STRIPE_AUTOMATIC_TAX": "false",
+    "EMAIL_PROVIDER": "smtp",
+}.items():
+    os.environ[_name] = _value
 RUN_INTEGRATION = os.getenv("RUN_INTEGRATION") == "1"
 if RUN_INTEGRATION:
     _url = os.environ.get("DATABASE_URL", "postgresql+psycopg://app:app@localhost:5432/app")
