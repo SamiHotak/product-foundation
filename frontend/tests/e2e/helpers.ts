@@ -75,3 +75,13 @@ export function collectErrors(page: Page): string[] {
 export function toasts(page: Page) {
   return page.getByRole("region", { name: "Notifications" });
 }
+
+/**
+ * Put the signed-in owner's workspace on a plan without paying. Uses the dev-only
+ * endpoint (BILLING_DEV_TOOLS=true in docker-compose.dev.yml). Tests that invite people or
+ * create many API keys need more than the free plan allows.
+ */
+export async function setPlan(page: Page, planId: "free" | "pro" | "business"): Promise<void> {
+  const res = await page.request.post("/api/billing/dev/set-plan", { data: { plan_id: planId } });
+  expect(res.status(), "set-plan needs BILLING_DEV_TOOLS=true (docker-compose.dev.yml)").toBe(204);
+}

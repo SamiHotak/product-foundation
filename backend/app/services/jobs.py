@@ -2,14 +2,15 @@
 
 import uuid
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, Protocol, cast
 
 from app.core.errors import NotFoundError, ServiceUnavailableError
 from app.core.logging import get_logger
 from app.models.job import Job
 from app.repositories.jobs import JobStore
 from app.schemas.jobs import ExampleJobCreate
-from app.workers.registry import JOB_TASKS
+from app.services.usage import Metric
+from app.workers.registry import JOB_TASKS, JOB_USAGE_METRIC
 
 logger = get_logger(__name__)
 
@@ -18,12 +19,27 @@ Dispatcher = Callable[[Job], Awaitable[None]]
 QUEUE_DOWN_ERROR = "Could not queue the job because the job queue was not reachable."
 
 
+class UsageMeter(Protocol):
+    """Counts metered usage (app.services.usage.UsageService). Raises when the plan is full."""
+
+    async def consume(self, organization_id: uuid.UUID, metric: Metric, amount: int = 1) -> None:
+        """Count, or raise LimitReachedError."""
+        ...
+
+    async def release(self, organization_id: uuid.UUID, metric: Metric, amount: int = 1) -> None:
+        """Give back."""
+        ...
+
+
 class JobService:
     """Creates jobs, hands them to the queue, and reads their status."""
 
-    def __init__(self, store: JobStore, dispatch: Dispatcher) -> None:
+    def __init__(
+        self, store: JobStore, dispatch: Dispatcher, meter: UsageMeter | None = None
+    ) -> None:
         self._store = store
         self._dispatch = dispatch
+        self._meter = meter
 
     async def enqueue(
         self,
@@ -40,6 +56,10 @@ class JobService:
         """
         if kind not in JOB_TASKS:
             raise ValueError(f"Unknown job kind: {kind!r}. Register it in app/workers/registry.py")
+        metric = cast(Metric | None, JOB_USAGE_METRIC.get(kind))
+        if metric and self._meter:
+            # Counted in the same transaction as the job row (raises when the plan is full).
+            await self._meter.consume(organization_id, metric)
         job = await self._store.create(
             kind=kind,
             params=params,
@@ -52,6 +72,8 @@ class JobService:
         except Exception as exc:
             logger.error("job_dispatch_failed", job_id=str(job.id), error_type=type(exc).__name__)
             await self._store.mark_failed(job, QUEUE_DOWN_ERROR)
+            if metric and self._meter:
+                await self._meter.release(organization_id, metric)  # it never ran
             await self._store.commit()
             raise ServiceUnavailableError(
                 "The job queue is not reachable right now. Try again in a minute."

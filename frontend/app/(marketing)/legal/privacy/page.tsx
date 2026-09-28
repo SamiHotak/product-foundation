@@ -84,9 +84,12 @@ export default function PrivacyPage() {
 
       <h3>Payments</h3>
       <p>
-        Paid plans are handled by Stripe. We do not see or store your full card details. We keep
-        invoices as long as tax and commercial law require (currently up to 10 years; Art. 6 (1) (c)
-        GDPR).
+        Paid plans are handled by Stripe. You enter your card, billing address and VAT ID on
+        Stripe&apos;s pages; we never see or store your card details. We store the Stripe customer
+        number of your workspace, the plan, its status and renewal date, and how much of the plan
+        limits the workspace used this month (Art. 6 (1) (b) GDPR). The workspace owner&apos;s name
+        and email are sent to Stripe for invoices. Invoices are kept as long as tax and commercial
+        law require (currently up to 10 years; Art. 6 (1) (c) GDPR).
       </p>
 
       <h2>3. Service providers</h2>

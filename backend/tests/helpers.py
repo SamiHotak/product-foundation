@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI
@@ -11,18 +11,40 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
+from app.core.plans import DEFAULT_CATALOG, PlanCatalog, PlanLimits
 from app.core.rate_limit import MemoryRateLimiter, get_rate_limiter
 from app.db.session import get_db
 from app.main import create_app
 from app.models.job import Job
 from app.repositories.jobs import JobRepository
-from app.routers.deps import get_email_sender, get_google_client
+from app.routers.deps import (
+    get_email_sender,
+    get_google_client,
+    get_payment_gateway,
+    get_plan_catalog,
+)
 from app.routers.jobs import get_job_service
 from app.services.jobs import JobService
+from app.services.usage import UsageService
 from app.workers.registry import JOB_TASKS
-from tests.fakes import FakeEmailSender, FakeGoogleClient
+from tests.fakes import FakeEmailSender, FakeGateway, FakeGoogleClient
 
 PASSWORD = "correct horse battery"
+
+
+def roomy_catalog() -> PlanCatalog:
+    """The real plans, but the free plan has no limits.
+
+    Most tests are about their own feature (invites, keys, jobs), not about plan limits.
+    Limits are tested with the real plans in test_billing_*.py and test_usage_limits.py.
+    """
+    plans = tuple(
+        replace(p, limits=PlanLimits(members=None, jobs_per_month=None, api_keys=None))
+        if p.id == DEFAULT_CATALOG.free.id
+        else p
+        for p in DEFAULT_CATALOG.plans
+    )
+    return PlanCatalog(plans)
 
 
 @dataclass
@@ -33,6 +55,8 @@ class World:
     email: FakeEmailSender = field(default_factory=FakeEmailSender)
     limiter: MemoryRateLimiter = field(default_factory=MemoryRateLimiter)
     google: FakeGoogleClient = field(default_factory=FakeGoogleClient)
+    stripe: FakeGateway = field(default_factory=FakeGateway)
+    catalog: PlanCatalog = field(default_factory=roomy_catalog)
     dispatched: list[Job] = field(default_factory=list)
 
     @asynccontextmanager
@@ -98,19 +122,67 @@ class World:
         return body
 
 
-def build_world() -> World:
-    """Real app + real test database; email, rate limits, Google and the job queue are fakes."""
-    world = World(app=create_app(get_settings()))
+def build_world(catalog: PlanCatalog | None = None, **settings_changes: Any) -> World:
+    """Real app + real test database; email, rate limits, Google, Stripe and the job queue
+    are fakes. `catalog`: the plans (default: real plans with an unlimited free plan).
+    `settings_changes`: settings the app is BUILT with (e.g. billing_dev_tools=True)."""
+    settings = get_settings()
+    if settings_changes:
+        settings = settings.model_copy(update=settings_changes)
+    world = World(app=create_app(settings))
+    if settings_changes:
+        world.app.dependency_overrides[get_settings] = lambda: settings
+    if catalog is not None:
+        world.catalog = catalog
     app = world.app
 
     async def dispatch(job: Job) -> None:
         world.dispatched.append(job)
 
     def job_service(session: Annotated[AsyncSession, Depends(get_db)]) -> JobService:
-        return JobService(JobRepository(session), dispatch)
+        return JobService(JobRepository(session), dispatch, UsageService(session, world.catalog))
 
     app.dependency_overrides[get_email_sender] = lambda: world.email
     app.dependency_overrides[get_rate_limiter] = lambda: world.limiter
     app.dependency_overrides[get_google_client] = lambda: world.google
     app.dependency_overrides[get_job_service] = job_service
+    app.dependency_overrides[get_plan_catalog] = lambda: world.catalog
+    app.dependency_overrides[get_payment_gateway] = lambda: world.stripe
     return world
+
+
+def set_plan(
+    organization_id: str,
+    plan_id: str | None,
+    *,
+    status: str = "active",
+    customer_id: str | None = None,
+    subscription_id: str | None = None,
+) -> None:
+    """Put a workspace on a plan directly in the database (like a finished checkout)."""
+    import uuid as _uuid
+
+    from sqlalchemy.dialects.postgresql import insert
+
+    from app.db.session import sync_session
+    from app.models.billing import Subscription
+
+    values = {
+        "plan_id": plan_id,
+        "status": status,
+        "interval": "month",
+        "stripe_customer_id": customer_id or f"cus_{_uuid.uuid4().hex[:12]}",
+        "stripe_subscription_id": subscription_id or f"sub_{_uuid.uuid4().hex[:12]}",
+    }
+    with sync_session() as session:
+        session.execute(
+            insert(Subscription)
+            .values(
+                id=_uuid.uuid4(),
+                organization_id=_uuid.UUID(organization_id),
+                cancel_at_period_end=False,
+                trial_used=False,
+                **values,
+            )
+            .on_conflict_do_update(index_elements=[Subscription.organization_id], set_=values)
+        )

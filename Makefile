@@ -3,8 +3,9 @@
 
 COMPOSE = docker compose -f deploy/docker-compose.dev.yml
 s ?=
+ARGS ?=
 
-.PHONY: help dev down logs ps restart test lint format api-client e2e check migrate migration seed example-job shell psql clean
+.PHONY: help dev down logs ps restart test lint format api-client e2e check migrate migration seed example-job stripe-sync stripe-listen email-preview shell psql clean
 
 help: ## Show all commands
 	@echo "make dev          Start everything (first run takes a few minutes)"
@@ -22,6 +23,9 @@ help: ## Show all commands
 	@echo "make migration name=add_users   Create a migration from model changes"
 	@echo "make seed         Load development data"
 	@echo "make example-job  Run the example background job and show progress"
+	@echo "make stripe-sync  Create/update Stripe products + prices from plans.py (ARGS=--dry-run)"
+	@echo "make stripe-listen  Forward Stripe test webhooks to your app (Ctrl+C to stop)"
+	@echo "make email-preview  Send one of every email to Mailpit (http://localhost:8025)"
 	@echo "make shell        Open a shell in the backend container"
 	@echo "make psql         Open the Postgres console"
 	@echo "make clean        Stop everything and DELETE local data"
@@ -86,6 +90,15 @@ seed:
 
 example-job:
 	$(COMPOSE) exec backend python -m app.scripts.run_example_job
+
+stripe-sync:
+	$(COMPOSE) exec backend python -m app.scripts.stripe_sync $(ARGS)
+
+stripe-listen:
+	$(COMPOSE) --profile stripe run --rm stripe-cli
+
+email-preview:
+	$(COMPOSE) exec backend python -m app.scripts.email_preview
 
 shell:
 	$(COMPOSE) exec backend bash

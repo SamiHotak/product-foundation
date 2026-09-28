@@ -94,8 +94,12 @@ model withdrawal form, the "cancel contract" button (*Kündigungsbutton*, § 312
 including VAT (PAngV), the "order with obligation to pay" button text (§ 312j BGB), and limits on
 automatic renewal (§ 309 No. 9 BGB). Don't open to consumers without a lawyer.
 
-To make B2B-only real: the signup page links to the Terms; in phase 4A, checkout should ask for a
-company name / VAT id.
+To make B2B-only real: the signup page links to the Terms, and (phase 4A) Stripe Checkout asks
+for the billing address and offers the "I'm purchasing as a business" fields (company name,
+VAT ID). The VAT ID is not forced, because some small businesses have none. Clause 4-6 describe
+the real billing behaviour: a trial asks for a card and continues as a paid plan unless
+cancelled (we email a reminder), plans renew automatically, cancelling works at the end of the
+period, and failed payments end in the free plan (no data is deleted). Let a lawyer check this.
 
 ## AVV / DPA (data processing agreement)
 

@@ -23,6 +23,9 @@ SENSITIVE_KEYS = {
     "api_key",
     "cookie",
     "secret_key",
+    "stripe_signature",
+    "webhook_secret",
+    "email_api_key",
 }
 
 
@@ -76,6 +79,8 @@ def configure_logging(level: str = "INFO", fmt: str = "console") -> None:
     for name in ("uvicorn", "uvicorn.error", "celery"):
         logging.getLogger(name).handlers = []
         logging.getLogger(name).propagate = True
+    # The Stripe SDK logs every request at INFO; we log what matters ourselves.
+    logging.getLogger("stripe").setLevel(logging.WARNING)
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:

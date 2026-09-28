@@ -81,8 +81,8 @@ every endpoint the user + active organization; repositories filter every tenant 
 `organization.id`. Another workspace's data returns 404, never 403 (its existence is not revealed).
 `tests/test_org_isolation.py` proves it with two real users; add every new tenant endpoint there.
 
-**Emails** are queued to the worker (`send_email` task, retries while the mail server is down).
-Locally they go to Mailpit; phase 4A adds a real provider.
+**Emails** are queued to the worker (`send_email` task, retries while the provider is down).
+Locally they go to Mailpit; in production to Resend or Postmark (`EMAIL_PROVIDER`, phase 4A).
 
 **Frontend:** `app/(app)/layout.tsx` loads `/api/auth/me` on the server and redirects to `/login`
 when signed out (no flash of the app). Forms read their values from the DOM on submit, so text
@@ -213,7 +213,8 @@ work before (or without) JavaScript. The header only checks that a `session` coo
 **Plans** have one source: `backend/app/core/plans.py` → `BillingService.public_plans()` →
 `GET /api/billing/plans` (public, `Cache-Control: max-age=300`) → `getPlans()` in
 `lib/api/server.ts` (3 s timeout; the page shows a short note instead of crashing if the API is
-down). Phase 4A adds Stripe price ids (env vars) and limit checks on the same plan ids.
+down). Phase 4A: `make stripe-sync` creates the Stripe prices from the same file (lookup keys
+`<prefix>_<plan>_<month|year>`), and the limits use the same plan ids.
 
 **Analytics** (cookie-less, optional):
 
@@ -238,6 +239,42 @@ performance 95–99 on every public page (landing 95–98, desktop 100), accessi
 practices and SEO 100. Layout shift ~0 thanks to the metric-matched `Brand Fallback` font in
 `globals.css`. Re-measure on the real server in phase 5.
 
+## Billing, limits and emails (phase 4A)
+
+Details and the real test-mode walkthrough: [BILLING.md](BILLING.md).
+
+**New tables** (migration `0006`): `subscriptions` (one row per workspace that ever started a
+checkout: Stripe customer + subscription, plan, status, period end, trial used),
+`usage_records` (org, metric, month → count), `stripe_events` (handled webhook ids).
+
+```
+routers/billing.py      GET /billing/plans (public) · GET /billing/current (any member)
+                        POST /billing/checkout · POST /billing/portal (owner)
+                        POST /billing/webhook (Stripe; hidden from the API client)
+routers/billing_dev.py  pretend checkout/portal + POST /billing/dev/set-plan (BILLING_DEV_TOOLS)
+services/billing.py     checkout, portal, webhooks → apply_snapshot() (the ONE place that
+                        changes a subscription), billing emails after commit
+services/stripe_gateway.py  Stripe SDK behind PaymentGateway (tests: FakeGateway)
+services/usage.py       plan_for(org), consume()/release() (monthly), check_seats(), check_api_keys()
+scripts/stripe_sync.py  plans.py → Stripe products, prices, portal settings
+```
+
+**Webhooks:** signature check (`STRIPE_WEBHOOK_SECRET`) → `INSERT … ON CONFLICT DO NOTHING` on
+the event id (a repeat, even in parallel, does nothing) → the subscription is read fresh from
+Stripe (order of events does not matter) → saved in the SAME transaction as the event id. If
+Stripe or the database fails, nothing is saved and the endpoint answers 5xx, so Stripe retries.
+The billing row is locked BEFORE Stripe is read, so a slow event can't overwrite a newer
+one. An old, ended subscription never overwrites the current one, and a second paying
+subscription never replaces the first (logged as `second_paid_subscription`). Checkout keeps
+at most one open session per workspace and checks Stripe's live subscriptions first.
+The nightly purge deletes the Stripe customer before the workspace.
+
+**Limits:** monthly counters use one SQL upsert with `WHERE count + n <= limit`, so parallel
+requests can't pass a limit (tested with 12 requests at once). Seats and API keys lock the
+workspace row first. `LimitReachedError` → 402 `limit_reached` with details (metric, used,
+limit, plan). Tests run with the real plans in `test_billing*.py` / `test_usage_limits.py`;
+other tests use `roomy_catalog()` (free plan without limits) so they test their own feature.
+
 ## Planned by phase
 
 | Phase | Adds |
@@ -247,5 +284,6 @@ practices and SEO 100. Layout shift ~0 thanks to the metric-matched `Brand Fallb
 | 2B | invites, role permissions, member management, API keys, audit log, GDPR export/delete (done) |
 | 3A | design system (data table, forms, toasts, command palette), settings pages, onboarding, theming (done) |
 | 3B | marketing site, pricing from plans config, legal page templates, cookie-less analytics, SEO files (done) |
-| 4 | Stripe billing + usage limits, files, emails, LLM gateway, admin, demo mode |
+| 4A | Stripe checkout, portal, webhooks, trial, plan limits + metering, email templates + providers (done) |
+| 4B | file storage, LLM gateway, admin pages, demo mode |
 | 5 | production deployment on Hetzner, backups, monitoring |

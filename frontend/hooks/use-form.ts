@@ -38,6 +38,7 @@ export function useForm<V extends Values>({ initial, validate, onSubmit, mapErro
   const [values, setValues] = useState<V>(initial);
   const [errors, setErrors] = useState<Partial<Record<keyof V, string>>>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [formErrorCause, setFormErrorCause] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [base, setBase] = useState<V>(initial);
@@ -73,6 +74,7 @@ export function useForm<V extends Values>({ initial, validate, onSubmit, mapErro
     const form = event.currentTarget;
     setSubmitted(true);
     setFormError(null);
+    setFormErrorCause(null);
     const found: Partial<Record<keyof V, string>> = {};
     for (const name of Object.keys(values) as (keyof V)[]) {
       const message = check(name, values);
@@ -100,6 +102,7 @@ export function useForm<V extends Values>({ initial, validate, onSubmit, mapErro
         if (el instanceof HTMLElement) el.focus();
       } else {
         setFormError(errorMessage(err));
+        setFormErrorCause(err);
       }
     } finally {
       setSubmitting(false);
@@ -112,6 +115,7 @@ export function useForm<V extends Values>({ initial, validate, onSubmit, mapErro
     setValues(next);
     setErrors({});
     setFormError(null);
+    setFormErrorCause(null);
     setSubmitted(false);
   }
 
@@ -121,6 +125,8 @@ export function useForm<V extends Values>({ initial, validate, onSubmit, mapErro
     values,
     errors,
     formError,
+    /** The thrown error behind `formError` (e.g. to show "See plans" when a limit is reached). */
+    formErrorCause,
     submitting,
     dirty,
     field,

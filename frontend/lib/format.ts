@@ -12,6 +12,13 @@ export function formatDate(iso: string): string {
   return dateFormat.format(new Date(iso));
 }
 
+const dayFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: "UTC" });
+
+/** A calendar day from the API ("2026-10-01"), the same day everywhere in the world. */
+export function formatDay(isoDate: string): string {
+  return dayFormat.format(new Date(`${isoDate}T00:00:00Z`));
+}
+
 export function formatDateTime(iso: string): string {
   return dateTimeFormat.format(new Date(iso));
 }

@@ -5,9 +5,7 @@ the `jobs` table (base=JobTask), reports progress, retries temporary errors with
 backoff, and returns a small JSON result.
 """
 
-import smtplib
 import time
-from email.message import EmailMessage
 from typing import Any
 
 from app.core.config import get_settings
@@ -70,6 +68,7 @@ def heartbeat() -> str:
 
 
 @celery_app.task(  # type: ignore[untyped-decorator]
+    bind=True,
     name="app.workers.tasks.send_email",
     autoretry_for=(TemporaryError,),
     retry_backoff=True,
@@ -77,28 +76,32 @@ def heartbeat() -> str:
     retry_jitter=True,
     max_retries=6,
 )
-def send_email(to: str, subject: str, text: str, html: str | None = None) -> None:
-    """Send one email over SMTP (Mailpit locally). Retries while the server is down."""
+def send_email(self: Any, to: str, subject: str, text: str, html: str | None = None) -> None:
+    """Send one email through EMAIL_PROVIDER. Retries while the provider is down.
+
+    The Celery task id is the idempotency key, so a retry never sends the email twice
+    through providers that support it (Resend).
+    """
+    from app.services.email import EmailMessage
+    from app.services.email_transport import (
+        PermanentEmailError,
+        TemporaryEmailError,
+        transport_for,
+    )
+
     settings = get_settings()
-    msg = EmailMessage()
-    msg["From"] = settings.email_from
-    msg["To"] = to
-    msg["Subject"] = subject
-    msg.set_content(text)
-    if html:
-        msg.add_alternative(html, subtype="html")
+    message = EmailMessage(to=to, subject=subject, text=text, html=html)
     try:
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as smtp:
-            if settings.smtp_starttls:
-                smtp.starttls()
-            if settings.smtp_username and settings.smtp_password:
-                smtp.login(settings.smtp_username, settings.smtp_password.get_secret_value())
-            smtp.send_message(msg)
-    except (OSError, smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError) as exc:
-        logger.warning("email_send_retry", subject=subject, error=type(exc).__name__)
-        raise TemporaryError("mail server not reachable") from exc
+        transport_for(settings).send(message, idempotency_key=self.request.id)
+    except TemporaryEmailError as exc:
+        logger.warning("email_send_retry", subject=subject, error=str(exc))
+        raise TemporaryError("mail provider not reachable") from exc
+    except PermanentEmailError as exc:
+        # Retrying can't fix this (e.g. sender domain not verified): log it loudly.
+        logger.error("email_send_failed", subject=subject, error=str(exc))
+        return
     # The address is personal data: log the subject only.
-    logger.info("email_sent", subject=subject)
+    logger.info("email_sent", subject=subject, provider=settings.email_provider)
 
 
 @celery_app.task(name="app.workers.tasks.cleanup_auth")  # type: ignore[untyped-decorator]
@@ -175,10 +178,14 @@ def purge_deleted() -> dict[str, int]:
     """Nightly: delete accounts and workspaces whose deletion date has passed (GDPR)."""
     from datetime import UTC, datetime
 
+    from app.core.plans import DEFAULT_CATALOG
     from app.db.session import sync_session
     from app.services.purge import purge_due
+    from app.services.stripe_gateway import gateway_for
 
-    counts = purge_due(sync_session, datetime.now(UTC))
+    gateway = gateway_for(get_settings(), DEFAULT_CATALOG)
+    delete_customer = gateway.delete_customer if gateway is not None else None
+    counts = purge_due(sync_session, datetime.now(UTC), delete_customer)
     logger.info("purge_deleted", **counts)
     return counts
 

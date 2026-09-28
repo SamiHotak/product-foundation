@@ -165,3 +165,124 @@ class FakeGoogleClient:
             raise self.error
         assert self.profile is not None
         return self.profile
+
+
+class FakeGateway:
+    """Pretends to be Stripe. Holds subscriptions that tests change, and records calls."""
+
+    kind = "stripe"
+
+    def __init__(self, prefix: str = "foundation") -> None:
+        from app.services.stripe_gateway import SubscriptionSnapshot
+
+        self.prefix = prefix
+        self.customers: list[dict[str, Any]] = []
+        self.checkouts: list[dict[str, Any]] = []
+        self.portals: list[dict[str, Any]] = []
+        self.subscriptions: dict[str, SubscriptionSnapshot] = {}
+        self.expired: list[str] = []
+        self.cancelled: list[str] = []
+        self.deleted_customers: list[str] = []
+        self.fail: Exception | None = None  # raised by every API call when set
+        self.delete_error: Exception | None = None
+        self.on_get: Any = None  # called with the id before get_subscription answers
+
+    def _check(self) -> None:
+        if self.fail is not None:
+            raise self.fail
+
+    async def create_customer(self, *, organization_id: uuid.UUID, name: str, email: str) -> str:
+        self._check()
+        customer_id = f"cus_test_{len(self.customers) + 1}_{uuid.uuid4().hex[:6]}"
+        self.customers.append(
+            {"id": customer_id, "organization_id": organization_id, "name": name, "email": email}
+        )
+        return customer_id
+
+    async def create_checkout(self, **kwargs: Any) -> Any:
+        from app.services.stripe_gateway import CheckoutSession
+
+        self._check()
+        self.checkouts.append(kwargs)
+        n = len(self.checkouts)
+        return CheckoutSession(id=f"cs_test_{n}", url=f"https://checkout.stripe.test/c/{n}")
+
+    async def expire_checkout(self, session_id: str) -> None:
+        self._check()
+        self.expired.append(session_id)
+
+    async def create_portal(self, *, customer_id: str, return_url: str) -> str:
+        self._check()
+        self.portals.append({"customer_id": customer_id, "return_url": return_url})
+        return f"https://billing.stripe.test/p/{customer_id}"
+
+    async def get_subscription(self, subscription_id: str) -> Any:
+        self._check()
+        if self.on_get is not None:
+            self.on_get(subscription_id)
+        return self.subscriptions.get(subscription_id)
+
+    async def live_subscriptions(self, customer_id: str) -> list[Any]:
+        from app.models.billing import LIVE_STATUSES
+
+        self._check()
+        return [
+            s
+            for s in self.subscriptions.values()
+            if s.customer_id == customer_id and s.status in LIVE_STATUSES
+        ]
+
+    async def cancel_subscription(self, subscription_id: str) -> None:
+        from dataclasses import replace
+
+        self._check()
+        self.cancelled.append(subscription_id)
+        if subscription_id in self.subscriptions:
+            old = self.subscriptions[subscription_id]
+            self.subscriptions[subscription_id] = replace(old, status="canceled")
+
+    def parse_event(self, payload: bytes, signature: str | None) -> Any:
+        """Accepts JSON events signed with the literal signature "valid"."""
+        import json
+
+        from app.services.stripe_gateway import InvalidWebhookError, WebhookEvent
+
+        if signature != "valid":
+            raise InvalidWebhookError("Invalid webhook signature.")
+        body = json.loads(payload)
+        return WebhookEvent(id=body["id"], type=body["type"], data=body["data"]["object"])
+
+    def delete_customer(self, customer_id: str) -> None:
+        if self.delete_error is not None:
+            raise self.delete_error
+        self.deleted_customers.append(customer_id)
+
+    # --- helpers for tests ------------------------------------------------------------
+
+    def set_subscription(
+        self,
+        customer_id: str,
+        *,
+        sub_id: str = "sub_1",
+        status: str = "active",
+        plan_id: str | None = "pro",
+        interval: str = "month",
+        cancel_at_period_end: bool = False,
+        trial_days: int = 0,
+    ) -> Any:
+        """Make Stripe "have" this subscription (what a webhook would then read)."""
+        from app.services.stripe_gateway import SubscriptionSnapshot
+
+        now = datetime.now(UTC)
+        snap = SubscriptionSnapshot(
+            id=sub_id,
+            customer_id=customer_id,
+            status=status,
+            plan_id=plan_id,
+            interval=interval,
+            current_period_end=now + timedelta(days=30),
+            cancel_at_period_end=cancel_at_period_end,
+            trial_end=now + timedelta(days=trial_days) if trial_days else None,
+        )
+        self.subscriptions[sub_id] = snap
+        return snap

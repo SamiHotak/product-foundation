@@ -55,6 +55,7 @@ export function useRecentJobs({ limit = 8, intervalMs = 1000 } = {}) {
   const [state, setState] = useState<RecentJobsState>({ jobs: null, loadError: null });
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [startErrorCause, setStartErrorCause] = useState<unknown>(null);
 
   const load = useCallback(async () => {
     try {
@@ -77,6 +78,7 @@ export function useRecentJobs({ limit = 8, intervalMs = 1000 } = {}) {
     async (body: ExampleJobCreate) => {
       setStarting(true);
       setStartError(null);
+      setStartErrorCause(null);
       try {
         const job = await unwrap(api.POST("/api/jobs/example", { body }));
         window.dispatchEvent(new Event(ONBOARDING_REFRESH)); // "Run a job" step may be done now
@@ -88,6 +90,7 @@ export function useRecentJobs({ limit = 8, intervalMs = 1000 } = {}) {
         return job;
       } catch (err) {
         setStartError(errorMessage(err));
+        setStartErrorCause(err);
         return null;
       } finally {
         setStarting(false);
@@ -96,7 +99,7 @@ export function useRecentJobs({ limit = 8, intervalMs = 1000 } = {}) {
     [limit],
   );
 
-  return { ...state, starting, startError, startExample, reload: load };
+  return { ...state, starting, startError, startErrorCause, startExample, reload: load };
 }
 
 /**

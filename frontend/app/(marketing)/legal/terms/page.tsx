@@ -42,22 +42,27 @@ export default function TermsPage() {
 
       <h2>4. Free plan and trial</h2>
       <p>
-        The free plan and trials are free of charge and can be changed or ended by us with 30
-        days&apos; notice. A trial ends automatically unless you choose a paid plan.
+        The free plan is free of charge and can be changed or ended by us with 30 days&apos; notice.
+        Some paid plans start with a free trial (one per workspace). You add a payment method at
+        checkout, but nothing is charged during the trial. If you do not cancel before the trial
+        ends, the paid plan continues and the first payment is taken on that day. We remind you by
+        email a few days before.
       </p>
 
       <h2>5. Prices and payment</h2>
       <p>
         Prices are shown on the pricing page, plus VAT. Fees are paid in advance for the chosen
-        period (monthly or yearly) through our payment provider. If a payment fails, we may restrict
-        access after a reminder.
+        period (monthly or yearly) through our payment provider Stripe. If a payment fails, we
+        remind you by email and try again over the following days; if it still fails, the workspace
+        moves to the free plan and its limits apply. No data is deleted because of this.
       </p>
 
       <h2>6. Term and cancellation</h2>
       <p>
-        Paid plans renew automatically for the same period. You can cancel at any time in the app,
-        effective at the end of the current period. We can cancel with 30 days&apos; notice to the
-        end of a period. The right to cancel for good cause is not affected.
+        Paid plans renew automatically for the same period. You can cancel at any time in the app
+        (Settings → Billing → Manage billing), effective at the end of the current period. We can
+        cancel with 30 days&apos; notice to the end of a period. The right to cancel for good cause
+        is not affected.
       </p>
 
       <h2>7. Your duties</h2>

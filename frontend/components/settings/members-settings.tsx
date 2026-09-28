@@ -4,6 +4,7 @@ import { MailPlus, MoreHorizontal, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { ApiErrorAlert } from "@/components/billing/api-error-alert";
 import { useSession } from "@/components/session-provider";
 import { Section } from "@/components/settings/section";
 import { Alert } from "@/components/ui/alert";
@@ -112,7 +113,7 @@ function InviteForm({ onSent }: { onSent: () => void }) {
       aria-label="Invite someone"
       className="space-y-3 rounded-menu border border-line bg-surface-sunken/60 p-4"
     >
-      {form.formError && <Alert tone="error">{form.formError}</Alert>}
+      {form.formError && <ApiErrorAlert message={form.formError} cause={form.formErrorCause} />}
       <div className="flex flex-wrap items-start gap-3">
         <Field
           label="Invite by email"

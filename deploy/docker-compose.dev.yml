@@ -28,7 +28,10 @@ x-backend-env: &backend-env
   SMTP_PORT: "1025"
   # Local only: the browser tests sign up many users from one IP. Production keeps 20/min.
   AUTH_REQUESTS_PER_MINUTE_PER_IP: "300"
-  # Google sign-in keys are NOT here: put them in backend/.env (never committed).
+  # Google sign-in and Stripe keys are NOT here: put them in backend/.env (never committed).
+  # Billing: without STRIPE_SECRET_KEY the app uses a pretend checkout (local only). With a
+  # Stripe TEST key in backend/.env it uses real Stripe test mode. See docs/BILLING.md.
+  BILLING_DEV_TOOLS: "true"
   # Windows + Docker Desktop: file change events don't cross into containers, so poll.
   WATCHFILES_FORCE_POLLING: "true"
 
@@ -153,6 +156,25 @@ services:
       timeout: 5s
       retries: 60
       start_period: 20s
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # Forwards Stripe TEST-mode webhooks to the backend (like Stripe will do in production).
+  # Not started by `make dev`; run with `make stripe-listen`. Needs STRIPE_SECRET_KEY in
+  # backend/.env. It prints a webhook secret (whsec_...): put it in backend/.env too.
+  stripe-cli:
+    profiles: ["stripe"]
+    image: stripe/stripe-cli:latest
+    env_file:
+      - path: ../backend/.env
+        required: false
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        stripe listen --api-key "$$STRIPE_SECRET_KEY"
+        --forward-to http://backend:8000/api/billing/webhook
+        --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,customer.subscription.paused,customer.subscription.resumed,customer.subscription.trial_will_end,invoice.paid,invoice.payment_failed
     depends_on:
       backend:
         condition: service_healthy

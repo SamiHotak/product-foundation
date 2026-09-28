@@ -135,6 +135,17 @@ curl.exe -H "Authorization: Bearer pf_YOUR_KEY" http://localhost:3000/api/jobs
 A key only does what its scopes allow (`jobs:read`, `jobs:write`). It can never manage the team
 or other keys. Revoke it in the same page; it stops working immediately.
 
+## Billing and plan limits
+
+**Settings → Billing** (owner): the plan, usage against the limits, **choose a plan** (Stripe
+Checkout) and **Manage billing** (Stripe's portal: card, invoices, VAT ID, change plan, cancel).
+Limits come from `backend/app/core/plans.py` (free: 1 person, 50 jobs a month, 1 API key).
+
+Without Stripe keys, `make dev` uses a **pretend checkout** (no payment, local only), so you can
+try everything right away. For one real Stripe **test-mode** payment, follow
+[docs/BILLING.md](docs/BILLING.md) (about 15 minutes). Emails: `make email-preview`, then open
+http://localhost:8025.
+
 ## Privacy (GDPR)
 
 **Settings → Privacy**: download a ZIP of your data (or the whole workspace, for admins), delete
@@ -159,6 +170,9 @@ nightly job (Celery beat) deletes what is due. Every team change is in **Setting
 | `make migration name=add_users` | Create a migration after changing models |
 | `make seed` | Load development data |
 | `make example-job` | Run the example background job and watch its progress |
+| `make stripe-sync` | Create/update the Stripe products and prices from `plans.py` (`ARGS=--dry-run` to preview) |
+| `make stripe-listen` | Forward Stripe test webhooks to your app (keep it open; Ctrl+C stops) |
+| `make email-preview` | Send one of every email to Mailpit (http://localhost:8025) |
 | `make shell` | Shell inside the backend container |
 | `make psql` | Postgres console |
 | `make clean` | Stop everything and **delete** local data |

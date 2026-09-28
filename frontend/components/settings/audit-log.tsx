@@ -18,6 +18,7 @@ const FILTERS = [
   { value: "member", label: "Team changes" },
   { value: "invite", label: "Invites" },
   { value: "api_key", label: "API keys" },
+  { value: "billing", label: "Billing" },
   { value: "org", label: "Workspace settings" },
 ] as const;
 
@@ -64,6 +65,12 @@ function describe(entry: AuditEntry): string {
       return `created the API key “${text(d, "name")}”`;
     case "api_key.revoked":
       return `revoked the API key “${text(d, "name")}”`;
+    case "billing.checkout_started":
+      return `opened checkout for the ${text(d, "plan")} plan (${text(d, "interval")}ly)`;
+    case "billing.plan_changed":
+      return `changed the plan from ${text(d, "from")} to ${text(d, "to")}`;
+    case "billing.renewal_changed":
+      return d.renews ? "turned renewal back on" : "cancelled the plan at the end of the period";
     default:
       return entry.action;
   }

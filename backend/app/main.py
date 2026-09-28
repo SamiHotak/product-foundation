@@ -23,6 +23,7 @@ from app.routers import (
     audit,
     auth,
     billing,
+    billing_dev,
     health,
     invites,
     jobs,
@@ -97,6 +98,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(audit.router)
     api.include_router(jobs.router)
     api.include_router(billing.router)
+    if settings.billing_dev_tools:  # pretend checkout; refused in production (config.py)
+        api.include_router(billing_dev.router)
     api.include_router(analytics.router)
     app.include_router(api)
 

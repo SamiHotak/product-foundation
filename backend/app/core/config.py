@@ -4,6 +4,7 @@ Every setting has a safe development default, except secrets in production:
 the validator refuses to start in production with the dev secret key.
 """
 
+import re
 from enum import StrEnum
 from functools import lru_cache
 from typing import Literal
@@ -61,7 +62,14 @@ class Settings(BaseSettings):
     session_days: int = 30
     session_cookie_secure: bool | None = None  # default: True in production
 
-    # Email (Mailpit locally; a real provider in phase 4A).
+    # Email. "smtp": any SMTP server (Mailpit locally). "resend" / "postmark": their HTTP API
+    # with EMAIL_API_KEY (better errors and delivery logs than SMTP). See docs/BILLING.md.
+    email_provider: Literal["smtp", "resend", "postmark"] = "smtp"
+    email_api_key: SecretStr | None = None
+    email_reply_to: str | None = None  # e.g. support@your-domain.com
+    # Shown in the footer of every email (B2B: who sends it). Empty = only the product name.
+    email_footer_address: str = ""
+    email_brand_color: str = "#244ba6"  # buttons in emails; keep close to the product accent
     smtp_host: str = "localhost"
     smtp_port: int = 1025
     smtp_username: str | None = None
@@ -103,6 +111,20 @@ class Settings(BaseSettings):
     analytics_site: str = ""  # Plausible: your domain. Umami: the website id.
     analytics_events_per_minute_per_ip: int = 120
 
+    # Billing (Stripe). Leave STRIPE_SECRET_KEY empty to switch paid plans off.
+    # Test mode keys start with sk_test_. Put them in backend/.env (never committed).
+    stripe_secret_key: SecretStr | None = None
+    stripe_webhook_secret: SecretStr | None = None
+    # Prefix of the Stripe product ids and price lookup keys ("foundation_pro_month").
+    # Every product needs its OWN prefix, because your products can share one Stripe account.
+    stripe_prefix: str = "foundation"
+    # Stripe Tax calculates VAT at checkout (Stripe charges a fee; register your tax IDs
+    # in the Stripe dashboard first). Off: prices are charged as configured in plans.py.
+    stripe_automatic_tax: bool = False
+    # Local development and e2e tests only: a pretend checkout and portal (no Stripe account
+    # needed) and POST /api/billing/dev/set-plan. Refused in production.
+    billing_dev_tools: bool = False
+
     @model_validator(mode="after")
     def _fill_defaults_and_check(self) -> "Settings":
         if self.celery_broker_url is None:
@@ -117,6 +139,23 @@ class Settings(BaseSettings):
             raise ValueError("ANALYTICS_HOST and ANALYTICS_SITE are needed when analytics is on.")
         if self.analytics_host and not self.analytics_host.startswith(("https://", "http://")):
             raise ValueError("ANALYTICS_HOST must start with https://")
+        if not re.fullmatch(r"[a-z][a-z0-9_]{1,30}", self.stripe_prefix):
+            raise ValueError("STRIPE_PREFIX: 2-31 characters, a-z, 0-9 and _ only.")
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", self.email_brand_color):
+            raise ValueError("EMAIL_BRAND_COLOR must look like #244ba6.")
+        if self.email_provider != "smtp" and not self.email_api_key:
+            raise ValueError("EMAIL_API_KEY is needed when EMAIL_PROVIDER is resend or postmark.")
+        if self.is_production and self.billing_dev_tools:
+            raise ValueError("BILLING_DEV_TOOLS must be off in production.")
+        if (
+            self.billing_dev_tools
+            and self.stripe_secret_key
+            and (self.stripe_secret_key.get_secret_value().startswith(("sk_live_", "rk_live_")))
+        ):
+            # set-plan would hand out paid plans for free next to real payments.
+            raise ValueError("BILLING_DEV_TOOLS can't be on with a LIVE Stripe key.")
+        if self.is_production and self.stripe_secret_key and not self.stripe_webhook_secret:
+            raise ValueError("STRIPE_WEBHOOK_SECRET is needed when Stripe is on.")
         if (
             self.environment is Environment.PRODUCTION
             and self.secret_key.get_secret_value() == DEV_SECRET_KEY
@@ -128,6 +167,11 @@ class Settings(BaseSettings):
     def google_enabled(self) -> bool:
         """True when Google sign-in is configured."""
         return bool(self.google_client_id and self.google_client_secret)
+
+    @property
+    def stripe_enabled(self) -> bool:
+        """True when real Stripe payments are configured."""
+        return bool(self.stripe_secret_key and self.stripe_secret_key.get_secret_value())
 
     @property
     def allowed_origins(self) -> set[str]:

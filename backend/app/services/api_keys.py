@@ -15,6 +15,7 @@ from app.core.config import Settings
 from app.core.errors import AppError, NotFoundError, RateLimitedError
 from app.core.logging import get_logger
 from app.core.permissions import API_KEY_SCOPES, Permission
+from app.core.plans import DEFAULT_CATALOG, PlanCatalog
 from app.core.rate_limit import RateLimiter
 from app.core.security import hash_token, new_token
 from app.models.api_key import ApiKey
@@ -25,6 +26,7 @@ from app.schemas.api_keys import ApiKeyCreated, ApiKeyRead
 from app.services.audit import AuditAction, AuditService
 from app.services.organizations import Caller, OrgContext
 from app.services.sessions import utcnow
+from app.services.usage import UsageService
 
 logger = get_logger(__name__)
 
@@ -65,12 +67,14 @@ class ApiKeyService:
         settings: Settings,
         limiter: RateLimiter,
         audit: AuditService,
+        catalog: PlanCatalog = DEFAULT_CATALOG,
     ) -> None:
         self._db = db
         self._settings = settings
         self._limiter = limiter
         self._audit = audit
         self._keys = ApiKeyRepository(db)
+        self._usage = UsageService(db, catalog)
 
     def _new_secret(self) -> str:
         return f"{self._settings.api_key_prefix}_{new_token()}"
@@ -82,6 +86,9 @@ class ApiKeyService:
         ctx.require(Permission.API_KEYS_MANAGE)
         wanted = {Permission(s) for s in scopes}
         assert wanted <= API_KEY_SCOPES  # the schema already rejects anything else
+        # Lock the workspace row so two requests at once can't both take the last key.
+        await OrganizationRepository(self._db).lock(ctx.organization.id)
+        await self._usage.check_api_keys(ctx.organization.id, now=utcnow())
         secret = self._new_secret()
         key = ApiKey(
             organization_id=ctx.organization.id,

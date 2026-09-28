@@ -101,3 +101,8 @@ export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) return err.message;
   return "Something went wrong. Try again.";
 }
+
+/** The plan's limit was reached (HTTP 402). Show it with a way to upgrade: <ApiErrorAlert>. */
+export function isLimitReached(err: unknown): err is ApiError {
+  return err instanceof ApiError && err.code === "limit_reached";
+}

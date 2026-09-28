@@ -852,6 +852,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/billing/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Plan and usage of the active workspace
+         * @description Every member may see the plan and usage. Only the owner can change them.
+         */
+        get: operations["get_billing"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a checkout
+         * @description Owner only. Returns the Stripe Checkout address; send the browser there.
+         */
+        post: operations["start_checkout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/portal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open the customer portal
+         * @description Owner only. Stripe's portal: payment method, invoices, VAT ID, change plan, cancel.
+         */
+        post: operations["open_portal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics/event": {
         parameters: {
             query?: never;
@@ -1068,6 +1128,72 @@ export interface components {
             password?: boolean;
             /** Google */
             google: boolean;
+        };
+        /**
+         * BillingOverview
+         * @description The workspace's plan, subscription and usage. Every member may read it.
+         */
+        BillingOverview: {
+            /**
+             * Provider
+             * @description "none": paid plans are switched off. "dev": pretend checkout (local only).
+             * @enum {string}
+             */
+            provider: "stripe" | "dev" | "none";
+            /** Plan Id */
+            plan_id: string;
+            /** Plan Name */
+            plan_name: string;
+            /**
+             * Status
+             * @description Stripe status: trialing, active, past_due, canceled, ... null = never paid.
+             */
+            status: string | null;
+            /** Interval */
+            interval: ("month" | "year") | null;
+            /** Current Period End */
+            current_period_end: string | null;
+            /** Cancel At Period End */
+            cancel_at_period_end: boolean;
+            /** Trial End */
+            trial_end: string | null;
+            /**
+             * Trial Available
+             * @description False once this workspace used its free trial.
+             */
+            trial_available: boolean;
+            /**
+             * Has Billing Account
+             * @description True when the customer portal can be opened.
+             */
+            has_billing_account: boolean;
+            /**
+             * Can Manage
+             * @description The caller may change the plan (the owner).
+             */
+            can_manage: boolean;
+            /** Usage */
+            usage: components["schemas"]["UsageItem"][];
+            /**
+             * Usage Resets On
+             * Format: date
+             * @description Monthly counters start from 0 on this day (UTC).
+             */
+            usage_resets_on: string;
+        };
+        /**
+         * CheckoutCreate
+         * @description Start paying for a plan.
+         */
+        CheckoutCreate: {
+            /** Plan Id */
+            plan_id: string;
+            /**
+             * Interval
+             * @default month
+             * @enum {string}
+             */
+            interval?: "month" | "year";
         };
         /**
          * DeletionRequest
@@ -1632,6 +1758,14 @@ export interface components {
             checks: components["schemas"]["DependencyCheck"][];
         };
         /**
+         * RedirectResponse
+         * @description Send the browser to this address (Stripe checkout or customer portal).
+         */
+        RedirectResponse: {
+            /** Url */
+            url: string;
+        };
+        /**
          * ResetPasswordRequest
          * @description Token from the reset email + the new password.
          */
@@ -1691,6 +1825,26 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
+        };
+        /**
+         * UsageItem
+         * @description One limit of the plan and how much of it is used.
+         */
+        UsageItem: {
+            /**
+             * Metric
+             * @enum {string}
+             */
+            metric: "members" | "jobs_per_month" | "api_keys";
+            /** Label */
+            label: string;
+            /** Used */
+            used: number;
+            /**
+             * Limit
+             * @description null = unlimited.
+             */
+            limit: number | null;
         };
         /**
          * UserRead
@@ -4570,6 +4724,214 @@ export interface operations {
             };
             /** @description Unexpected server error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_billing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingOverview"];
+                };
+            };
+            /** @description Not signed in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Some fields are invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unexpected server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    start_checkout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckoutCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedirectResponse"];
+                };
+            };
+            /** @description Bad request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not signed in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Some fields are invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unexpected server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A dependency is not reachable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    open_portal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedirectResponse"];
+                };
+            };
+            /** @description Not signed in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Some fields are invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unexpected server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A dependency is not reachable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

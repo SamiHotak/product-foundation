@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings, get_settings
 from app.core.errors import UnauthorizedError
 from app.core.permissions import Permission
+from app.core.plans import DEFAULT_CATALOG, PlanCatalog
 from app.core.rate_limit import RateLimiter, get_rate_limiter
 from app.db.session import get_db
 from app.models.session import UserSession
@@ -30,6 +31,7 @@ from app.services.account import AccountService
 from app.services.api_keys import ApiKeyService
 from app.services.audit import AuditService, RequestMeta
 from app.services.auth import AuthService
+from app.services.billing import BillingService
 from app.services.deletion import DeletionService
 from app.services.email import CeleryEmailSender, EmailSender
 from app.services.exports import ExportService
@@ -40,11 +42,29 @@ from app.services.members import MemberService
 from app.services.onboarding import OnboardingService
 from app.services.organizations import Caller, OrganizationService, OrgContext
 from app.services.sessions import SessionService
+from app.services.stripe_gateway import PaymentGateway, gateway_for
+from app.services.usage import UsageService
 from app.workers.dispatch import celery_dispatch
 
 Db = Annotated[AsyncSession, Depends(get_db)]
 AppSettings = Annotated[Settings, Depends(get_settings)]
 Limiter = Annotated[RateLimiter, Depends(get_rate_limiter)]
+
+
+def get_plan_catalog() -> PlanCatalog:
+    """The plans from app/core/plans.py (tests swap in other limits)."""
+    return DEFAULT_CATALOG
+
+
+Catalog = Annotated[PlanCatalog, Depends(get_plan_catalog)]
+
+
+def get_payment_gateway(settings: AppSettings, catalog: Catalog) -> PaymentGateway | None:
+    """Stripe, the dev pretend checkout, or None when paid plans are off (tests: a fake)."""
+    return gateway_for(settings, catalog)
+
+
+Gateway = Annotated[PaymentGateway | None, Depends(get_payment_gateway)]
 
 
 def client_ip(request: Request) -> str:
@@ -100,9 +120,9 @@ def get_org_service(db: Db, audit: Audit) -> OrganizationService:
     return OrganizationService(db, audit)
 
 
-def get_job_service(db: Db) -> JobService:
-    """Job service for this request (overridden in tests)."""
-    return JobService(JobRepository(db), celery_dispatch)
+def get_job_service(db: Db, catalog: Catalog) -> JobService:
+    """Job service for this request (overridden in tests). Metered jobs count against the plan."""
+    return JobService(JobRepository(db), celery_dispatch, UsageService(db, catalog))
 
 
 Sessions = Annotated[SessionService, Depends(get_session_service)]
@@ -117,17 +137,22 @@ def get_member_service(db: Db, audit: Audit) -> MemberService:
 
 
 def get_invite_service(
-    db: Db, settings: AppSettings, email_sender: Mailer, limiter: Limiter, audit: Audit
+    db: Db,
+    settings: AppSettings,
+    email_sender: Mailer,
+    limiter: Limiter,
+    audit: Audit,
+    catalog: Catalog,
 ) -> InviteService:
     """Invite service for this request."""
-    return InviteService(db, settings, email_sender, limiter, audit)
+    return InviteService(db, settings, email_sender, limiter, audit, catalog)
 
 
 def get_api_key_service(
-    db: Db, settings: AppSettings, limiter: Limiter, audit: Audit
+    db: Db, settings: AppSettings, limiter: Limiter, audit: Audit, catalog: Catalog
 ) -> ApiKeyService:
     """API key service for this request."""
-    return ApiKeyService(db, settings, limiter, audit)
+    return ApiKeyService(db, settings, limiter, audit, catalog)
 
 
 def get_export_service(
@@ -156,6 +181,18 @@ def get_onboarding_service(db: Db) -> OnboardingService:
     return OnboardingService(db)
 
 
+def get_billing_service(
+    db: Db,
+    settings: AppSettings,
+    catalog: Catalog,
+    gateway: Gateway,
+    email_sender: Mailer,
+    audit: Audit,
+) -> BillingService:
+    """Billing service for this request."""
+    return BillingService(db, settings, catalog, gateway, email_sender, audit)
+
+
 Members = Annotated[MemberService, Depends(get_member_service)]
 Invites = Annotated[InviteService, Depends(get_invite_service)]
 ApiKeys = Annotated[ApiKeyService, Depends(get_api_key_service)]
@@ -163,6 +200,7 @@ Exports = Annotated[ExportService, Depends(get_export_service)]
 Deletions = Annotated[DeletionService, Depends(get_deletion_service)]
 Accounts = Annotated[AccountService, Depends(get_account_service)]
 Onboarding = Annotated[OnboardingService, Depends(get_onboarding_service)]
+Billing = Annotated[BillingService, Depends(get_billing_service)]
 
 
 # --- who is calling -----------------------------------------------------------------------

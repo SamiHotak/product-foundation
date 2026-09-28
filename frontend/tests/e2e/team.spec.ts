@@ -1,6 +1,6 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
-import { linkPath, newEmail, PASSWORD, signUpAndSignIn, waitForEmail } from "./helpers";
+import { linkPath, newEmail, PASSWORD, setPlan, signUpAndSignIn, waitForEmail } from "./helpers";
 
 /**
  * Teams: invite -> accept -> role limits, API keys, and the audit trail.
@@ -47,6 +47,7 @@ async function acceptAsNewUser(browser: Browser, link: string, name: string): Pr
 test("sign up, invite, accept, and role limits", async ({ page, browser }) => {
   const errors = collectErrors(page);
   await signUpAndSignIn(page, "Olivia Owner");
+  await setPlan(page, "business"); // the free plan allows 1 person
   const memberEmail = newEmail("member");
   const link = await invite(page, memberEmail, "Member");
 
@@ -106,6 +107,7 @@ test("sign up, invite, accept, and role limits", async ({ page, browser }) => {
 
 test("an existing user signs in from the invite link and joins", async ({ page, browser }) => {
   await signUpAndSignIn(page, "Owen Owner");
+  await setPlan(page, "business"); // the free plan allows 1 person
   // Bob already has an account (and is signed out in his own browser).
   const bobContext = await browser.newContext();
   const bob = await bobContext.newPage();
@@ -131,6 +133,7 @@ test("an existing user signs in from the invite link and joins", async ({ page, 
 
 test("the owner can't leave, and transfers ownership", async ({ page, browser }) => {
   await signUpAndSignIn(page, "Tina Transfer");
+  await setPlan(page, "business"); // the free plan allows 1 person
   const link = await invite(page, newEmail("heir"), "Member");
   const heir = await acceptAsNewUser(browser, link, "Hugo Heir");
 

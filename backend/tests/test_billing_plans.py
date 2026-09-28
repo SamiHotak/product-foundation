@@ -4,7 +4,7 @@ from httpx import AsyncClient
 
 from app.core import plans as plan_config
 from app.core.plans import PlanDefinition, PlanLimits, get_plan
-from app.services.billing import BillingService
+from app.services.billing import public_plans
 
 
 async def test_plans_are_public_and_match_the_config(client: AsyncClient) -> None:
@@ -54,8 +54,7 @@ def test_hidden_plans_are_not_listed() -> None:
         features=("Three people",),
         contact_sales=True,
     )
-    result = BillingService((legacy, visible), currency="usd", prices_include_vat=True)
-    plans = result.public_plans()
+    plans = public_plans((legacy, visible), currency="usd", prices_include_vat=True)
 
     assert [p.id for p in plans.plans] == ["team"]
     assert plans.currency == "usd"

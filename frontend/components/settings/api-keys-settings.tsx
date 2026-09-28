@@ -3,6 +3,7 @@
 import { Check, Copy, KeyRound } from "lucide-react";
 import { useState } from "react";
 
+import { ApiErrorAlert } from "@/components/billing/api-error-alert";
 import { useSession } from "@/components/session-provider";
 import { NoAccess, Section } from "@/components/settings/section";
 import { Alert } from "@/components/ui/alert";
@@ -111,7 +112,7 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: ApiKeyCreated) => void 
 
   return (
     <form {...form.formProps} aria-label="Create an API key" className="space-y-5">
-      {form.formError && <Alert tone="error">{form.formError}</Alert>}
+      {form.formError && <ApiErrorAlert message={form.formError} cause={form.formErrorCause} />}
       <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]">
         <Field
           label="Name"

@@ -1,8 +1,9 @@
 "use client";
 
-import { Play, TriangleAlert } from "lucide-react";
+import { Play } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { ApiErrorAlert } from "@/components/billing/api-error-alert";
 import { JobProgress, jobTitle } from "@/components/jobs/job-progress";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -31,7 +32,7 @@ function useFinishAnnouncement(jobs: Job[] | null): string {
  * Products copy this pattern for their own long tasks.
  */
 export function JobsPanel() {
-  const { jobs, loadError, starting, startError, startExample } = useRecentJobs();
+  const { jobs, loadError, starting, startError, startErrorCause, startExample } = useRecentJobs();
   const announcement = useFinishAnnouncement(jobs);
 
   return (
@@ -62,10 +63,7 @@ export function JobsPanel() {
       </div>
 
       {startError && (
-        <p role="alert" className="mb-3 flex items-start gap-2 text-sm text-danger">
-          <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          {startError}
-        </p>
+        <ApiErrorAlert message={startError} cause={startErrorCause} className="mb-3" />
       )}
 
       <div className="rounded-menu border border-line">

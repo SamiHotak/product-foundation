@@ -3363,6 +3363,242 @@
         }
       }
     },
+    "/api/billing/current": {
+      "get": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Plan and usage of the active workspace",
+        "description": "Every member may see the plan and usage. Only the owner can change them.",
+        "operationId": "get_billing",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingOverview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some fields are invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/billing/checkout": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Start a checkout",
+        "description": "Owner only. Returns the Stripe Checkout address; send the browser there.",
+        "operationId": "start_checkout",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedirectResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some fields are invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is not reachable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/billing/portal": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Open the customer portal",
+        "description": "Owner only. Stripe's portal: payment method, invoices, VAT ID, change plan, cancel.",
+        "operationId": "open_portal",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedirectResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Some fields are invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is not reachable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/analytics/event": {
       "post": {
         "tags": [
@@ -3852,6 +4088,154 @@
         ],
         "title": "AuthProviders",
         "description": "Which sign-in options are switched on."
+      },
+      "BillingOverview": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "stripe",
+              "dev",
+              "none"
+            ],
+            "title": "Provider",
+            "description": "\"none\": paid plans are switched off. \"dev\": pretend checkout (local only)."
+          },
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id"
+          },
+          "plan_name": {
+            "type": "string",
+            "title": "Plan Name"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "Stripe status: trialing, active, past_due, canceled, ... null = never paid."
+          },
+          "interval": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "month",
+                  "year"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval"
+          },
+          "current_period_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Period End"
+          },
+          "cancel_at_period_end": {
+            "type": "boolean",
+            "title": "Cancel At Period End"
+          },
+          "trial_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial End"
+          },
+          "trial_available": {
+            "type": "boolean",
+            "title": "Trial Available",
+            "description": "False once this workspace used its free trial."
+          },
+          "has_billing_account": {
+            "type": "boolean",
+            "title": "Has Billing Account",
+            "description": "True when the customer portal can be opened."
+          },
+          "can_manage": {
+            "type": "boolean",
+            "title": "Can Manage",
+            "description": "The caller may change the plan (the owner)."
+          },
+          "usage": {
+            "items": {
+              "$ref": "#/components/schemas/UsageItem"
+            },
+            "type": "array",
+            "title": "Usage"
+          },
+          "usage_resets_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Usage Resets On",
+            "description": "Monthly counters start from 0 on this day (UTC)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "plan_id",
+          "plan_name",
+          "status",
+          "interval",
+          "current_period_end",
+          "cancel_at_period_end",
+          "trial_end",
+          "trial_available",
+          "has_billing_account",
+          "can_manage",
+          "usage",
+          "usage_resets_on"
+        ],
+        "title": "BillingOverview",
+        "description": "The workspace's plan, subscription and usage. Every member may read it."
+      },
+      "CheckoutCreate": {
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Plan Id"
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "month",
+              "year"
+            ],
+            "title": "Interval",
+            "default": "month"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan_id"
+        ],
+        "title": "CheckoutCreate",
+        "description": "Start paying for a plan."
       },
       "DeletionRequest": {
         "properties": {
@@ -4993,6 +5377,20 @@
         "title": "ReadinessResponse",
         "description": "Every dependency the API needs to serve traffic."
       },
+      "RedirectResponse": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "RedirectResponse",
+        "description": "Send the browser to this address (Stripe checkout or customer portal)."
+      },
       "ResetPasswordRequest": {
         "properties": {
           "token": {
@@ -5105,6 +5503,48 @@
         ],
         "title": "TransferOwnership",
         "description": "Make another member the owner. You become an admin."
+      },
+      "UsageItem": {
+        "properties": {
+          "metric": {
+            "type": "string",
+            "enum": [
+              "members",
+              "jobs_per_month",
+              "api_keys"
+            ],
+            "title": "Metric"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "used": {
+            "type": "integer",
+            "title": "Used"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit",
+            "description": "null = unlimited."
+          }
+        },
+        "type": "object",
+        "required": [
+          "metric",
+          "label",
+          "used",
+          "limit"
+        ],
+        "title": "UsageItem",
+        "description": "One limit of the plan and how much of it is used."
       },
       "UserRead": {
         "properties": {

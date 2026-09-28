@@ -1,5 +1,6 @@
-"""Billing schemas. Phase 3B: the public plan list. Phase 4A adds checkout and subscriptions."""
+"""Billing schemas: the public plan list, the workspace's plan and usage, checkout, portal."""
 
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -34,3 +35,53 @@ class PlansResponse(BaseModel):
     currency: Literal["eur", "usd", "gbp", "chf"]
     prices_include_vat: bool
     plans: list[PlanOut]
+
+
+class CheckoutCreate(BaseModel):
+    """Start paying for a plan."""
+
+    plan_id: str = Field(min_length=1, max_length=32)
+    interval: Literal["month", "year"] = "month"
+
+
+class RedirectResponse(BaseModel):
+    """Send the browser to this address (Stripe checkout or customer portal)."""
+
+    url: str
+
+
+class UsageItem(BaseModel):
+    """One limit of the plan and how much of it is used."""
+
+    metric: Literal["members", "jobs_per_month", "api_keys"]
+    label: str
+    used: int
+    limit: int | None = Field(description="null = unlimited.")
+
+
+class BillingOverview(BaseModel):
+    """The workspace's plan, subscription and usage. Every member may read it."""
+
+    provider: Literal["stripe", "dev", "none"] = Field(
+        description='"none": paid plans are switched off. "dev": pretend checkout (local only).'
+    )
+    plan_id: str
+    plan_name: str
+    status: str | None = Field(
+        description="Stripe status: trialing, active, past_due, canceled, ... null = never paid."
+    )
+    interval: Literal["month", "year"] | None
+    current_period_end: datetime | None
+    cancel_at_period_end: bool
+    trial_end: datetime | None
+    trial_available: bool = Field(description="False once this workspace used its free trial.")
+    has_billing_account: bool = Field(description="True when the customer portal can be opened.")
+    can_manage: bool = Field(description="The caller may change the plan (the owner).")
+    usage: list[UsageItem]
+    usage_resets_on: date = Field(description="Monthly counters start from 0 on this day (UTC).")
+
+
+class DevSetPlan(BaseModel):
+    """Local development / e2e only: put the workspace on a plan without paying."""
+
+    plan_id: str = Field(min_length=1, max_length=32)

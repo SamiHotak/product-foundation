@@ -19,6 +19,7 @@ from app.core.config import Settings
 from app.core.errors import AppError, ConflictError, NotFoundError, RateLimitedError
 from app.core.logging import get_logger
 from app.core.permissions import Permission
+from app.core.plans import DEFAULT_CATALOG, PlanCatalog
 from app.core.rate_limit import RateLimiter
 from app.core.security import hash_password, hash_token, new_token
 from app.models.invite import Invite
@@ -34,6 +35,7 @@ from app.services.audit import AuditAction, AuditService
 from app.services.email import EmailSender
 from app.services.organizations import OrgContext
 from app.services.sessions import utcnow
+from app.services.usage import UsageService
 
 logger = get_logger(__name__)
 
@@ -85,8 +87,10 @@ class InviteService:
         email_sender: EmailSender,
         limiter: RateLimiter,
         audit: AuditService,
+        catalog: PlanCatalog = DEFAULT_CATALOG,
     ) -> None:
         self._db = db
+        self._usage = UsageService(db, catalog)
         self._settings = settings
         self._email = email_sender
         self._limiter = limiter
@@ -138,8 +142,13 @@ class InviteService:
         existing = await self._users.get_by_email(email)
         if existing and await self._orgs.get_membership(ctx.organization.id, existing.id):
             raise ConflictError(f"{email} is already in this workspace.")
-        await self._count_send(ctx)
         now = utcnow()
+        # Seats: members + open invites must fit the plan (a new invite to the same email
+        # replaces the old one, so that one does not count twice).
+        await self._usage.check_seats(
+            ctx.organization.id, now=now, count_invites=True, replacing_invite_for=email
+        )
+        await self._count_send(ctx)
         old = await self._invites.get_unfinished_for_email(ctx.organization.id, email)
         if old is not None:
             old.revoked_at = now
@@ -239,6 +248,8 @@ class InviteService:
         now = utcnow()
         already = await self._orgs.get_membership(org.id, user.id)
         if already is None:
+            # The plan may have become smaller since the invite was sent.
+            await self._usage.check_seats(org.id, now=now, count_invites=False)
             await self._orgs.add_member(org.id, user.id, invite.role)
             await self._audit.record(
                 AuditAction.MEMBER_JOINED,

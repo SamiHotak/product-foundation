@@ -5,6 +5,7 @@ import {
   linkPath,
   newEmail,
   PASSWORD,
+  setPlan,
   signUpAndSignIn,
   toasts,
   waitForEmail,
@@ -65,6 +66,7 @@ test("command palette: Ctrl+K, search, arrow keys, Enter", async ({ page }) => {
 
 test("command palette hides pages you may not use", async ({ page, browser }) => {
   await signUpAndSignIn(page, "Owner Olga");
+  await setPlan(page, "business"); // the free plan allows 1 person
   const memberEmail = newEmail("palette");
   const res = await page.request.post("/api/organizations/current/invites", {
     data: { email: memberEmail, role: "member" },
@@ -201,6 +203,7 @@ test("onboarding checklist: steps tick, hide with undo, show again", async ({ pa
 test("data table: pages, search, sort, clear", async ({ page }) => {
   const errors = collectErrors(page);
   await signUpAndSignIn(page, "Tom Table");
+  await setPlan(page, "business"); // the free plan allows 1 API key
   for (let i = 1; i <= 12; i++) {
     const res = await page.request.post("/api/organizations/current/api-keys", {
       data: { name: `Key ${String(i).padStart(2, "0")}`, scopes: ["jobs:read"] },

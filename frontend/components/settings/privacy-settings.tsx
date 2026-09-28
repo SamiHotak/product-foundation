@@ -219,7 +219,7 @@ function DeleteWorkspace() {
   return (
     <Section
       title="Delete this workspace"
-      description={`“${activeOrganization.name}” and all its data are deleted for everyone in it. Their accounts stay.`}
+      description={`“${activeOrganization.name}” and all its data are deleted for everyone in it. Their accounts stay. A paid plan ends on the deletion day (no further charges, no refund for the current period).`}
     >
       {error && <Alert tone="error">{error}</Alert>}
       {activeOrganization.deletion_scheduled_at ? (

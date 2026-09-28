@@ -48,6 +48,9 @@ class AuditAction(StrEnum):
     ACCOUNT_EXPORTED = "account.exported"
     ACCOUNT_DELETION_SCHEDULED = "account.deletion_scheduled"
     ACCOUNT_DELETION_CANCELLED = "account.deletion_cancelled"
+    BILLING_CHECKOUT_STARTED = "billing.checkout_started"
+    BILLING_PLAN_CHANGED = "billing.plan_changed"
+    BILLING_RENEWAL_CHANGED = "billing.renewal_changed"
 
 
 @dataclass(frozen=True)

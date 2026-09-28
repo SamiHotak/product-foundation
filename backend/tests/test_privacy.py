@@ -298,5 +298,5 @@ async def test_cleanup_removes_expired_exports_and_old_audit(world: World) -> No
                 .values(created_at=datetime.now(UTC) - timedelta(days=400))
             )
         counts = cleanup(sync_session, datetime.now(UTC), audit_retention_days=365)
-        assert counts == {"exports": 1, "audit_events": 1}
+        assert counts == {"exports": 1, "audit_events": 1, "stripe_events": 0}
         assert _count(DataExport) == 0
