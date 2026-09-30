@@ -180,7 +180,7 @@ invented data: a small team, files, jobs, audit events, AI usage, the Pro plan.
 - [ ] Hetzner Object Storage: create a bucket (Germany) and S3 keys. Set `S3_ENDPOINT`,
       `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, leave `S3_PUBLIC_URL`
       empty, then run `make storage-setup` once (bucket CORS for your domain + clean-up
-      rule). Phase 5 puts this in `deploy/server-setup.md`.
+      rule). Steps: `deploy/server-setup.md` (on the server: `./deploy.sh compose exec backend python -m app.scripts.storage_setup`).
 - [ ] OpenAI: key with a **monthly budget limit**; for EU data residency an eligible project
       and `OPENAI_BASE_URL=https://eu.api.openai.com/v1`.
 - [ ] Langfuse keys (EU region). Decide `LLM_TRACE_CONTENT` and make the privacy policy say

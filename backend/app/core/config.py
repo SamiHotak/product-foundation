@@ -172,6 +172,13 @@ class Settings(BaseSettings):
     # AI summaries per visitor (IP) and hour in the shared demo (it may only use the samples).
     demo_ai_per_hour: int = Field(default=10, ge=1)
 
+    # Sentry (error reports). Empty DSN = off. Personal data is NOT sent (no cookies, no
+    # request bodies, no user email); see app/core/sentry.py. SENTRY_RELEASE is set by the
+    # deploy (the image tag), so an error shows which version caused it.
+    sentry_dsn: str = ""
+    sentry_release: str = ""
+    sentry_traces_sample_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+
     # Admins (users with is_superuser) can view the app as another user for support.
     impersonation_minutes: int = 60
 
@@ -226,6 +233,9 @@ class Settings(BaseSettings):
             raise ValueError("FILES_MAX_BYTES must be between 1 KB and 5 GB.")
         if self.is_production and self.llm_dev_fake:
             raise ValueError("LLM_DEV_FAKE must be off in production.")
+        self.sentry_dsn = self.sentry_dsn.strip()
+        if self.sentry_dsn and not self.sentry_dsn.startswith("https://"):
+            raise ValueError("SENTRY_DSN must start with https://")
         self.langfuse_host = self.langfuse_host.strip().rstrip("/")
         if self.langfuse_public_key and not self.langfuse_secret_key:
             raise ValueError("LANGFUSE_SECRET_KEY is needed with LANGFUSE_PUBLIC_KEY.")

@@ -1,0 +1,223 @@
+# Deploy to the production server. Runs automatically after CI is GREEN on main, and by hand
+# ("Run workflow") to redeploy or roll back to an older version.
+#
+#   build two images -> push to GitHub Container Registry -> copy deploy files to the server
+#   -> ssh: ./deploy.sh (backup, migrate, switch, health check, automatic rollback)
+#   -> check https://<domain> from here -> if it fails: ./deploy.sh rollback
+#
+# It does nothing until you set the repository variable DEPLOY_HOST (deploy/server-setup.md,
+# step "GitHub secrets and variables"). So a fresh copy of this template never deploys by accident.
+#
+# Secrets:   DEPLOY_SSH_KEY (private key of the deploy user), DEPLOY_KNOWN_HOSTS (server key line)
+#            -> store them as ENVIRONMENT secrets of the environment "production" (only main may use
+#            them). As plain repository secrets every branch workflow could read them.
+# Variables: DEPLOY_HOST, DOMAIN, DEPLOY_USER (default: deploy), NEXT_PUBLIC_SENTRY_DSN (optional)
+
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag to deploy WITHOUT building (rollback), e.g. sha-abc1234. Empty = build and deploy the latest commit."
+        required: false
+        default: ""
+
+# One deploy at a time. A running deploy is never cancelled (that could leave a half-switched server).
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  guard:
+    name: Is this still the newest commit?
+    # CI runs for two quick pushes can finish in the "wrong" order. Without this check the OLDER
+    # commit could deploy last and put old code on the server. By hand ("Run workflow") always goes on.
+    if: >-
+      vars.DEPLOY_HOST != '' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      current: ${{ steps.check.outputs.current }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "current=true" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tip=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$tip" = "$RUN_SHA" ]; then
+            echo "current=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "current=false" >>"$GITHUB_OUTPUT"
+            echo "Skipped: ${RUN_SHA:0:7} is not the newest commit on main any more (${tip:0:7}). The newer commit deploys itself." >>"$GITHUB_STEP_SUMMARY"
+          fi
+
+  deploy:
+    name: Build, deploy, check
+    needs: guard
+    if: needs.guard.outputs.current == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: production
+    env:
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER || 'deploy' }}
+      DOMAIN: ${{ vars.DOMAIN }}
+    steps:
+      - name: Work out what to deploy
+        id: what
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          sha="${RUN_SHA:-$GITHUB_SHA}"
+          tag="${INPUT_TAG:-sha-${sha:0:7}}"
+          if [[ ! "$tag" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
+            echo "Strange image tag: $tag" >&2
+            exit 1
+          fi
+          # Registry names must be lowercase.
+          prefix="ghcr.io/${GITHUB_REPOSITORY,,}"
+          {
+            echo "sha=$sha"
+            echo "tag=$tag"
+            echo "prefix=$prefix"
+            echo "build=$([ -z "$INPUT_TAG" ] && echo true || echo false)"
+          } >>"$GITHUB_OUTPUT"
+          if [ -n "$INPUT_TAG" ]; then note="existing image (no build)"; else note="new build of ${sha:0:7}"; fi
+          echo "Deploying $tag: $note" >>"$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.what.outputs.sha }}
+
+      - name: Set up Docker Buildx
+        if: steps.what.outputs.build == 'true'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to the container registry
+        if: steps.what.outputs.build == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push the backend image
+        if: steps.what.outputs.build == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: backend
+          target: prod
+          platforms: linux/amd64 # Hetzner "CPX" servers are x86. (ARM "CAX" servers need arm64.)
+          push: true
+          tags: ${{ steps.what.outputs.prefix }}-backend:${{ steps.what.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.what.outputs.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Build and push the frontend image
+        if: steps.what.outputs.build == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: frontend
+          target: prod
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.what.outputs.prefix }}-frontend:${{ steps.what.outputs.tag }}
+          build-args: |
+            API_INTERNAL_URL=http://backend:8000
+            NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
+            NEXT_PUBLIC_SENTRY_RELEASE=${{ steps.what.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.what.outputs.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          [ -n "$SSH_KEY" ] && [ -n "$KNOWN_HOSTS" ] || { echo "Secrets DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS are needed." >&2; exit 1; }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" >~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # The server's key is pinned (from a secret), so nobody can pose as the server.
+          printf '%s\n' "$KNOWN_HOSTS" >~/.ssh/known_hosts
+          {
+            echo "Host deploy-server"
+            echo "  HostName $DEPLOY_HOST"
+            echo "  User $DEPLOY_USER"
+            echo "  IdentityFile ~/.ssh/deploy_key"
+            echo "  IdentitiesOnly yes"
+            echo "  StrictHostKeyChecking yes"
+            echo "  ServerAliveInterval 30"
+          } >~/.ssh/config
+
+      - name: Copy the deploy files to the server
+        run: |
+          scp deploy/docker-compose.yml deploy/Caddyfile deploy/deploy.sh deploy/backup.sh deploy/restore-test.sh deploy/.env.backup.example deploy-server:/opt/app/
+          ssh deploy-server 'chmod +x /opt/app/deploy.sh /opt/app/backup.sh /opt/app/restore-test.sh'
+
+      - name: Deploy (backup, migrate, switch, health check)
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.what.outputs.tag }}
+          PREFIX: ${{ steps.what.outputs.prefix }}
+        run: |
+          # The server pulls the images with this job's short-lived token (no stored password).
+          printf '%s' "$GHCR_TOKEN" | ssh deploy-server "docker login ghcr.io -u '${GITHUB_ACTOR}' --password-stdin"
+          # IMAGE_PREFIX in .env must match; the deploy fails early with a clear message if not.
+          ssh deploy-server "grep -qx 'IMAGE_PREFIX=$PREFIX' /opt/app/.env || { echo 'IMAGE_PREFIX in /opt/app/.env must be: $PREFIX' >&2; exit 1; }"
+          ssh deploy-server "cd /opt/app && ./deploy.sh deploy '$TAG'"
+
+      - name: Check the public website
+        id: public
+        run: |
+          [ -n "$DOMAIN" ] || { echo "Set the repository variable DOMAIN (e.g. my-domain.com)." >&2; exit 1; }
+          # A brand-new certificate can take a minute, so try for up to 5 minutes.
+          for i in $(seq 1 30); do
+            if curl -fsS -m 10 "https://$DOMAIN/api/health/ready" >/dev/null && curl -fsS -m 10 -o /dev/null "https://$DOMAIN/"; then
+              echo "https://$DOMAIN is up."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "https://$DOMAIN did not answer in 5 minutes." >&2
+          exit 1
+
+      - name: Roll back (the public check failed)
+        if: failure() && steps.public.outcome == 'failure'
+        run: |
+          echo "::error::The new version is not reachable. Rolling back."
+          ssh deploy-server 'cd /opt/app && ./deploy.sh rollback' || echo "::error::Rollback failed too. Log in to the server: ./deploy.sh status"
+
+      - name: Log out of the registry on the server
+        if: always()
+        run: ssh deploy-server 'docker logout ghcr.io' || true
+
+      - name: Summary
+        if: success()
+        run: echo "Deployed ${{ steps.what.outputs.tag }} to https://$DOMAIN" >>"$GITHUB_STEP_SUMMARY"

@@ -326,4 +326,5 @@ change members, settings, keys, billing or the account.
 | 3B | marketing site, pricing from plans config, legal page templates, cookie-less analytics, SEO files (done) |
 | 4A | Stripe checkout, portal, webhooks, trial, plan limits + metering, email templates + providers (done) |
 | 4B | file storage, LLM gateway, admin pages, demo mode (done) |
-| 5 | production deployment on Hetzner, backups, monitoring |
+| 5A | production deployment on Hetzner (Compose + Caddy), GitHub deploy + rollback, encrypted backups, Sentry: see [DEPLOYMENT.md](DEPLOYMENT.md) (done) |
+| 5B | hardening, load and security checks, launch checklist |

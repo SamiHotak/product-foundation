@@ -16,6 +16,7 @@ from app.core.csrf import CsrfMiddleware
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestContextMiddleware
+from app.core.sentry import init_sentry
 from app.db.session import get_async_engine
 from app.routers import (
     admin,
@@ -58,6 +59,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """Build and configure the FastAPI app."""
     settings = settings or get_settings()
     configure_logging(settings.log_level, settings.log_format)
+    init_sentry(settings, component="api")
 
     app = FastAPI(
         title=settings.app_name,

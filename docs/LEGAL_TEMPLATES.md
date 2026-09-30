@@ -31,8 +31,10 @@ Links to all four are in the footer of every public page (the Impressum must be 
        them (phase 4B: **OpenAI** and **Langfuse** for AI features; file storage stays at Hetzner).
 4. [ ] Replace the remaining `[..]` values in the page files (log retention days, availability %,
        breach notice hours, place of jurisdiction).
-5. [ ] DPA security list: the two phase-5 items (backups, SSH access) stay in brackets until they
-       really exist. Keep that list true: it is a promise to customers.
+5. [ ] DPA security list: backups (encrypted, separate bucket, 14 days), SSH-key-only access and
+       Sentry error reports are now described as facts (phase 5A). They are only true after you
+       finished `deploy/server-setup.md`. Remove what you do not use. It is a promise to customers.
+       The privacy page says Sentry EU: create the Sentry project in the **EU region**.
 6. [ ] Decide: businesses only, or consumers too? (see below)
 7. [ ] Prices: `PRICES_INCLUDE_VAT` in `backend/app/core/plans.py` (ask your tax advisor;
        Kleinunternehmer under § 19 UStG charge no VAT and must say so on invoices).

@@ -159,6 +159,8 @@ http://localhost:8025.
 
 How it all works and what to set up before production: [docs/FILES_AND_AI.md](docs/FILES_AND_AI.md).
 
+Putting it on a server (Hetzner, HTTPS, deploys, backups, rollback): [deploy/server-setup.md](deploy/server-setup.md) and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
 ## Privacy (GDPR)
 
 **Settings → Privacy**: download a ZIP of your data (or the whole workspace, for admins), delete

@@ -30,7 +30,18 @@ export default function PrivacyPage() {
       <p>
         Our server records each request (IP address, date and time, page, browser) to keep the
         service secure and find errors. Legal basis: our legitimate interest in a secure service
-        (Art. 6 (1) (f) GDPR). These logs are deleted after <Value>[14]</Value> days.
+        (Art. 6 (1) (f) GDPR). These logs rotate automatically and are deleted after at most{" "}
+        <Value>[14]</Value> days.
+      </p>
+
+      <h3>Error reports</h3>
+      <p>
+        When something breaks, the app can send a technical error report to our error monitoring
+        service (Sentry): the error message, the page address (without parameters), your browser
+        type and the version of our software. It contains no cookies and no form contents, and email
+        addresses and IP addresses are removed from it before it is sent; reports from your browser
+        are passed on by our own server. Legal basis: our legitimate interest in finding and fixing
+        errors (Art. 6 (1) (f) GDPR).
       </p>
 
       <h3>Your account</h3>
@@ -116,6 +127,15 @@ export default function PrivacyPage() {
         <Value>[including the text and the answer | without the text and the answer]</Value>; these
         records are deleted after <Value>[30]</Value> days (Art. 6 (1) (f) GDPR). Don&apos;t put
         special categories of personal data (e.g. health data) into AI features.
+      </p>
+
+      <h3>Backups</h3>
+      <p>
+        We back up our database every night. Backups are encrypted and stored in Germany (Hetzner).
+        Our nightly job deletes backups that are older than 14 days. If you delete your data or your
+        workspace, it disappears from the live system at once (after the grace period) and from the
+        backups within 14 days. Backups are only restored after a serious failure (Art. 6 (1) (b)
+        and (f) GDPR).
       </p>
 
       <h3>Support access</h3>

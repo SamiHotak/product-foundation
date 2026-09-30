@@ -66,7 +66,8 @@ export const legal: LegalConfig = {
   processors: [
     {
       name: "Hetzner Online GmbH",
-      purpose: "Servers, database, backups and file storage (Hetzner Object Storage)",
+      purpose:
+        "Servers, database, encrypted backups (kept 14 days) and file storage (Hetzner Object Storage)",
       location: "Germany",
     },
     {
@@ -96,7 +97,8 @@ export const legal: LegalConfig = {
     },
     {
       name: "Functional Software, Inc. (Sentry)",
-      purpose: "Error reports, so we can fix bugs",
+      purpose:
+        "Error reports, so we can fix bugs (error message, page address without parameters, browser type, app version; no cookies, no form contents, no email addresses, no IP addresses)",
       location: "[EU region or USA]",
       transfer: "[EU-US Data Privacy Framework and/or Standard Contractual Clauses]",
     },

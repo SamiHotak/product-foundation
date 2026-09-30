@@ -28,6 +28,11 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 COPY --chown=app:app . .
 USER app
 EXPOSE 8000
-HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
+HEALTHCHECK --interval=10s --timeout=3s --retries=3 --start-period=15s \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2).status == 200 else 1)"
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
+# --workers 2: one slow request can't block the API. --timeout-keep-alive 65: longer than
+# Caddy's idle connection time (30 s), otherwise Caddy sometimes reuses a connection uvicorn
+# just closed and the visitor gets a 502 (same bug as the dev "socket hang up").
+# --forwarded-allow-ips=*: only Caddy can reach this port (no published port), and Caddy
+# replaces any X-Forwarded-For a visitor sends, so client IPs (rate limits) can't be faked.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--timeout-keep-alive", "65", "--proxy-headers", "--forwarded-allow-ips=*"]

@@ -1,3 +1,4 @@
+import { withSentryConfig } from "@sentry/nextjs/config";
 import type { NextConfig } from "next";
 
 /**
@@ -19,6 +20,12 @@ const apiUrl = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
  */
 const storageUrl = process.env.STORAGE_INTERNAL_URL;
 
+/**
+ * Sentry (error reports) is wired in ONLY when NEXT_PUBLIC_SENTRY_DSN is set while building
+ * the image (production). Without it (dev, CI, tests) the config below is used untouched.
+ */
+const sentryDsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
+
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
@@ -34,4 +41,14 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default sentryDsn
+  ? withSentryConfig(nextConfig, {
+      silent: true,
+      telemetry: false,
+      // Browsers send reports to /monitoring on our domain; Next.js forwards them to Sentry.
+      tunnelRoute: "/monitoring",
+      // No source map upload (it needs an auth token at build time). Add later if you want
+      // readable browser stack traces.
+      sourcemaps: { disable: true },
+    })
+  : nextConfig;

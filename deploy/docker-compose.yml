@@ -1,0 +1,148 @@
+# Production stack for ONE server (Hetzner). Copied to /opt/app on the server by
+# .github/workflows/deploy.yml; you never run it on your laptop (use docker-compose.dev.yml).
+#
+#   Internet -> Caddy (HTTPS, 80/443)
+#                 /api/*     -> backend  (FastAPI)
+#                 everything -> frontend (Next.js)
+#   backend, worker, beat -> postgres, redis, S3 storage (Hetzner Object Storage, outside)
+#
+# Only Caddy publishes ports. Postgres and Redis are NOT reachable from the internet.
+# Settings come from /opt/app/.env (see deploy/.env.example). Deploy with ./deploy.sh.
+
+name: app
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m" # without this, container logs slowly fill the disk
+    max-file: "3"
+
+x-backend-env: &backend-env
+  ENVIRONMENT: production
+  LOG_FORMAT: json
+  DATABASE_URL: postgresql+psycopg://app:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/app
+  REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379/0
+  APP_URL: https://${DOMAIN:?set DOMAIN in .env}
+  CORS_ORIGINS: '["https://${DOMAIN}"]'
+  SENTRY_RELEASE: ${IMAGE_TAG:-unknown}
+  # The dev-only switches can never be on in production (the app refuses to start).
+  BILLING_DEV_TOOLS: "false"
+  LLM_DEV_FAKE: "false"
+
+x-backend: &backend
+  image: ${IMAGE_PREFIX:?set IMAGE_PREFIX in .env}-backend:${IMAGE_TAG:?use ./deploy.sh}
+  # .env holds the app's secrets (SECRET_KEY, Stripe, email, S3 ...). `environment` below wins.
+  # The backup passphrase and backup bucket keys are NOT here (they are in .env.backup, which no
+  # app container reads), so a hacked app cannot reach the backups.
+  env_file: .env
+  environment: *backend-env
+  restart: unless-stopped
+  logging: *logging
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    logging: *logging
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+      # Browser uploads go straight to the file storage: the security headers must allow it.
+      # Example: https://fsn1.your-objectstorage.com  (empty = files switched off)
+      S3_ORIGIN: ${S3_ORIGIN:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # certificates: keep this volume, or Let's Encrypt limits hit you
+      - caddy-config:/config
+    depends_on:
+      - frontend
+      - backend
+
+  frontend:
+    image: ${IMAGE_PREFIX}-frontend:${IMAGE_TAG:?use ./deploy.sh}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      APP_URL: https://${DOMAIN}
+      API_INTERNAL_URL: http://backend:8000
+      NEXT_TELEMETRY_DISABLED: "1"
+    # No published port: only Caddy reaches it. The image has its own health check.
+
+  backend:
+    <<: *backend
+    # Migrations are NOT run here: ./deploy.sh runs them once, before the new version starts.
+    # (Two containers starting together must never migrate at the same time.)
+
+  worker:
+    <<: *backend
+    command: celery -A app.workers.celery_app worker --loglevel=INFO --concurrency=2
+    # A running job gets 2 minutes to finish on deploy; if it doesn't, it is retried
+    # (jobs are acknowledged after they finish).
+    stop_grace_period: 120s
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+
+  beat:
+    <<: *backend
+    command: celery -A app.workers.celery_app beat --loglevel=INFO --schedule /tmp/celerybeat-schedule
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: app
+    # Modest settings for a 4 GB server that also runs the app. Raise them on a bigger server.
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c effective_cache_size=1GB
+      -c max_connections=100
+      -c log_min_duration_statement=1000
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 60s
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    logging: *logging
+    # noeviction: Redis is the job queue, it must never silently drop messages when full.
+    command: >
+      redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+      --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+volumes:
+  postgres-data:
+  redis-data:
+  caddy-data:
+  caddy-config:

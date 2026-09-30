@@ -61,6 +61,17 @@ export default function DpaPage() {
         <li>Brute-force protection and rate limits on sign-in and the API</li>
         <li>Audit log of security-relevant actions</li>
         <li>
+          Nightly database backups: encrypted (AES-256) before they leave the server, stored in a
+          separate storage account in Germany with separate access keys, deleted after 14 days;
+          restore tested
+        </li>
+        <li>
+          Only the web ports (80, 443) and key-only SSH for administration are open to the internet;
+          the database and job queue are not reachable from outside; HTTPS with security headers
+          (HSTS, content security policy)
+        </li>
+        <li>Error reports contain no cookies, form contents, email addresses or IP addresses</li>
+        <li>
           Uploaded files: stored per workspace in object storage in Germany, only reachable with
           short-lived signed links (15 minutes to upload, 5 minutes to download), type checked from
           the file content, always downloaded as an attachment (never run in the browser)

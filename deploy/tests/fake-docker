@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# A pretend `docker` for deploy-script-test.sh. It records every call in $FAKE_DIR/calls.log
+# and keeps a tiny pretend list of containers per service in $FAKE_DIR/ids-<service>.
+# Failure switches (environment): FAIL_MIGRATE=1, FAIL_BACKUP=1, FAIL_CADDY=1, FAKE_DB_REV=<revision the database is at>, and FAIL_SCALE=<service> with
+# FAIL_TAG=<tag>: that service never gets healthy on that version (other versions are fine).
+set -u
+: "${FAKE_DIR:?}"
+echo "[${IMAGE_TAG:-none}] docker $*" >>"$FAKE_DIR/calls.log"
+
+ids_file() { echo "$FAKE_DIR/ids-$1"; }
+
+if [ "${1:-}" = "compose" ]; then
+  shift
+  # drop global flags we never use, then read the sub command
+  sub=${1:-}
+  shift || true
+  case "$sub" in
+    config | pull) exit 0 ;;
+    run)
+      [[ "$*" == *"alembic upgrade"* ]] && [ "${FAIL_MIGRATE:-0}" = "1" ] && exit 1
+      [[ "$*" == *"alembic history"* ]] && echo "base -> rev0001 (head), first migration"
+      [[ "$*" == *"caddy validate"* ]] && [ "${FAIL_CADDY:-0}" = "1" ] && exit 1
+      exit 0 ;;
+    exec)
+      # health checks: fail while FAKE_UNHEALTHY exists
+      [[ "$*" == *alembic_version* ]] && { echo "${FAKE_DB_REV:-}"; exit 0; }
+      [ -e "$FAKE_DIR/unhealthy" ] && exit 1
+      exit 0 ;;
+    ps)
+      svc="" format=0
+      for a in "$@"; do
+        case "$a" in
+          --format) format=1 ;;
+          '{{.Image}}') ;;
+          -*) ;;
+          *) svc=$a ;;
+        esac
+      done
+      f=$(ids_file "$svc")
+      [ -e "$f" ] || exit 0
+      if [ "$format" = 1 ]; then
+        while read -r _; do echo "registry/app-$svc:${IMAGE_TAG}"; done <"$f"
+      else
+        cat "$f"
+      fi
+      exit 0 ;;
+    up)
+      svc="" scale=""
+      for a in "$@"; do
+        case "$a" in
+          --scale) ;;
+          "$svc=" ) ;;
+          *=*) scale=${a#*=} ;;
+          -*) ;;
+          [0-9]*) ;;
+          *) svc=$a ;;
+        esac
+      done
+      # the service name is the last non-option word
+      for a in "$@"; do case "$a" in -*|*=*|[0-9]*) ;; *) svc=$a ;; esac; done
+      case "$svc" in postgres | redis | caddy) exit 0 ;; esac
+      f=$(ids_file "$svc")
+      if [ -n "$scale" ]; then
+        touch "$f"
+        have=$(wc -l <"$f")
+        if [ "$scale" -gt "$have" ]; then
+          [ "${FAIL_SCALE:-}" = "$svc" ] && [ "${IMAGE_TAG}" = "${FAIL_TAG:-}" ] && { echo "new-$svc-${IMAGE_TAG}-$scale" >>"$f"; exit 1; }
+          for i in $(seq $((have + 1)) "$scale"); do echo "new-$svc-${IMAGE_TAG}-$i" >>"$f"; done
+        fi
+      else # plain up (recreate): one container on the new tag
+        [ "${FAIL_SCALE:-}" = "$svc" ] && [ "${IMAGE_TAG}" = "${FAIL_TAG:-}" ] && exit 1
+        echo "new-$svc-${IMAGE_TAG}" >"$f"
+      fi
+      exit 0 ;;
+    exec_caddy) exit 0 ;;
+  esac
+  exit 0
+fi
+
+case "${1:-}" in
+  stop) exit 0 ;;
+  rm)
+    shift
+    for id in "$@"; do
+      [[ "$id" == -* ]] && continue
+      for f in "$FAKE_DIR"/ids-*; do [ -e "$f" ] && sed -i "/^$id\$/d" "$f"; done
+    done
+    exit 0 ;;
+  image) exit 0 ;;
+esac
+exit 0

@@ -12,8 +12,10 @@ from celery.signals import setup_logging
 
 from app.core.config import get_settings
 from app.core.logging import configure_logging
+from app.core.sentry import init_sentry
 
 settings = get_settings()
+init_sentry(settings, component="worker")
 
 celery_app = Celery(
     "product_foundation",

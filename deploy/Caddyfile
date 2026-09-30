@@ -1,0 +1,89 @@
+# Caddy: automatic HTTPS (Let's Encrypt), compression, security headers, routing.
+# Values come from environment variables set in docker-compose.yml (from /opt/app/.env).
+# After a change: ./deploy.sh reload-caddy   (the deploy does this for you).
+
+{
+	email {$ACME_EMAIL}
+}
+
+# www -> without www. (needs a DNS record for www, see deploy/server-setup.md)
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Bodies over 6 MB are refused early. Files never pass through the API: browsers upload
+	# straight to the file storage.
+	request_body {
+		max_size 6MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=15552000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		# 'unsafe-inline' is needed for the small scripts and styles Next.js writes into every
+		# page. A stricter policy (nonces) makes every page dynamic; see docs/DEPLOYMENT.md.
+		# Everything else is locked down: no third-party scripts, no frames, no plugins.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' {$S3_ORIGIN}; form-action 'self' {$S3_ORIGIN}; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; upgrade-insecure-requests"
+		-Server
+	}
+
+	# Browsers and crawlers ask for /favicon.ico by habit; our icon lives at /icon.
+	rewrite /favicon.ico /icon
+
+	# The API. Caddy sets X-Forwarded-For itself (a visitor can't fake his IP for the rate
+	# limits) and gives every request an id that appears in the API logs and error messages.
+	@api path /api/*
+	handle @api {
+		reverse_proxy backend:8000 {
+			header_up X-Request-ID {http.request.uuid}
+			# During a deploy the old and new container overlap for a moment: if a connection
+			# fails, try again for up to 5 seconds instead of showing an error.
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			transport http {
+				# Shorter than the servers' own keep-alive (65 s), so Caddy never reuses a
+				# connection the server has just closed (that gives random 502 errors).
+				keepalive 30s
+				dial_timeout 5s
+				# A stuck request is answered with an error after a minute, not never.
+				response_header_timeout 60s
+			}
+		}
+	}
+
+	# The website (and /monitoring: browser error reports forwarded to Sentry).
+	handle {
+		reverse_proxy frontend:3000 {
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			transport http {
+				keepalive 30s
+				dial_timeout 5s
+				response_header_timeout 60s
+			}
+		}
+	}
+
+	# Error pages. Too-big bodies get an honest message (some Caddy versions report them as a
+	# gateway error, so the message text is checked). 502/503/504 = a service is restarting.
+	handle_errors {
+		@toobig expression {http.error.message}.contains("request body too large")
+		handle @toobig {
+			header Content-Type "text/plain; charset=utf-8"
+			respond "The request is too large." 413
+		}
+		@unavailable expression {http.error.status_code} in [502, 503, 504]
+		handle @unavailable {
+			header Retry-After "5"
+			header Content-Type "text/plain; charset=utf-8"
+			respond "The service is restarting. Please try again in a few seconds." 503
+		}
+	}
+}

@@ -41,6 +41,10 @@ for _name, _value in {
     "LANGFUSE_SECRET_KEY": "",
     "DEMO_ENABLED": "false",
     "DEMO_AI_PER_HOUR": "10",
+    # Phase 5A: Sentry stays off in tests (a test that needs it passes settings itself).
+    "SENTRY_DSN": "",
+    "SENTRY_RELEASE": "",
+    "SENTRY_TRACES_SAMPLE_RATE": "0",
 }.items():
     os.environ[_name] = _value
 RUN_INTEGRATION = os.getenv("RUN_INTEGRATION") == "1"
