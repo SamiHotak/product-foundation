@@ -25,6 +25,7 @@ def error_responses(*codes: int) -> dict[int | str, dict[str, Any]]:
     descriptions = {
         400: "Bad request",
         401: "Not signed in",
+        402: "The plan limit is reached",
         403: "Not allowed",
         404: "Not found",
         409: "Conflict",

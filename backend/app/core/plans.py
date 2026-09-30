@@ -18,6 +18,8 @@ Limits (see app/services/usage.py):
 - members          people in the workspace (open invites count too)
 - jobs_per_month   metered background jobs per calendar month (UTC); GDPR exports never count
 - api_keys         active API keys
+- storage_mb       files stored in the workspace, in MB (uploads in progress count too)
+- ai_requests_per_month  calls to the AI (LLM gateway) per calendar month (UTC)
 When a workspace moves to a smaller plan, nothing is deleted: it just can't add more.
 """
 
@@ -40,6 +42,8 @@ class PlanLimits:
     members: int | None
     jobs_per_month: int | None
     api_keys: int | None
+    storage_mb: int | None = None
+    ai_requests_per_month: int | None = None
 
 
 @dataclass(frozen=True)
@@ -66,10 +70,14 @@ PLANS: tuple[PlanDefinition, ...] = (
         description="For trying it out on your own.",
         price_monthly=0,
         price_yearly=0,
-        limits=PlanLimits(members=1, jobs_per_month=50, api_keys=1),
+        limits=PlanLimits(
+            members=1, jobs_per_month=50, api_keys=1, storage_mb=100, ai_requests_per_month=50
+        ),
         features=(
             "1 person",
             "50 background jobs a month",
+            "100 MB of files",
+            "50 AI requests a month",
             "1 API key",
             "Data export at any time",
         ),
@@ -80,10 +88,18 @@ PLANS: tuple[PlanDefinition, ...] = (
         description="For a small team that uses it every day.",
         price_monthly=2900,
         price_yearly=29000,
-        limits=PlanLimits(members=5, jobs_per_month=2000, api_keys=10),
+        limits=PlanLimits(
+            members=5,
+            jobs_per_month=2000,
+            api_keys=10,
+            storage_mb=10_240,
+            ai_requests_per_month=2000,
+        ),
         features=(
             "Up to 5 people",
             "2,000 background jobs a month",
+            "10 GB of files",
+            "2,000 AI requests a month",
             "10 API keys",
             "Audit log",
             "Email support",
@@ -97,10 +113,18 @@ PLANS: tuple[PlanDefinition, ...] = (
         description="For larger teams with extra needs.",
         price_monthly=9900,
         price_yearly=99000,
-        limits=PlanLimits(members=None, jobs_per_month=20000, api_keys=None),
+        limits=PlanLimits(
+            members=None,
+            jobs_per_month=20000,
+            api_keys=None,
+            storage_mb=102_400,
+            ai_requests_per_month=20000,
+        ),
         features=(
             "Unlimited people",
             "20,000 background jobs a month",
+            "100 GB of files",
+            "20,000 AI requests a month",
             "Unlimited API keys",
             "Data processing agreement (AVV)",
             "Priority support",

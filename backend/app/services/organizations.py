@@ -18,7 +18,8 @@ from app.models.organization import Membership, Organization
 from app.models.session import UserSession
 from app.models.user import User
 from app.repositories.organizations import OrganizationRepository
-from app.schemas.auth import MeResponse, OrganizationRead, UserRead
+from app.repositories.users import UserRepository
+from app.schemas.auth import ImpersonatorRead, MeResponse, OrganizationRead, UserRead
 from app.services.audit import AuditAction, AuditService
 
 NOT_ALLOWED = "You don't have permission to do this. Ask an owner or admin of this workspace."
@@ -98,6 +99,8 @@ def user_read(user: User) -> UserRead:
         google_linked=user.google_sub is not None,
         created_at=user.created_at,
         deletion_scheduled_at=user.deletion_scheduled_at,
+        is_superuser=user.is_superuser,
+        is_demo=user.is_demo,
     )
 
 
@@ -191,9 +194,17 @@ class OrganizationService:
     async def me(self, user: User, user_session: UserSession) -> MeResponse:
         """The "who am I" payload for the app."""
         context = await self.resolve_context(user, user_session)
+        impersonator = None
+        if user_session.impersonator_id is not None:
+            admin = await UserRepository(self._db).get(user_session.impersonator_id)
+            if admin is not None:
+                impersonator = ImpersonatorRead(
+                    name=admin.name, email=admin.email, ends_at=user_session.expires_at
+                )
         return MeResponse(
             user=user_read(user),
             organizations=await self.list_for_user(user),
             active_organization_id=context.organization.id,
             permissions=sorted(context.permissions),
+            impersonator=impersonator,
         )

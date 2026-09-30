@@ -257,7 +257,9 @@ class AuthService:
     async def forgot_password(self, email: str) -> None:
         """Email a reset link if the account exists. Same answer either way."""
         user = await self.users.get_by_email(email)
-        if user is None or not user.is_active or not await self._may_email(email):
+        if user is None or not user.is_active or user.is_demo:
+            return
+        if not await self._may_email(email):
             return
         minutes = self._settings.password_reset_minutes
         token = await self._issue_token(
@@ -298,6 +300,8 @@ class AuthService:
         user = await self.users.get_by_google_sub(profile.sub)
         if user is None:
             user = await self.users.get_by_email(profile.email)
+            if user is not None and user.is_demo:
+                raise GoogleSignInError("This email belongs to the demo. Use another account.")
             if user is not None:
                 if not user.is_verified:
                     # Someone may have registered this email without owning it: drop their password.

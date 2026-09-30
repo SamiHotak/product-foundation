@@ -11,6 +11,14 @@ import type { NextConfig } from "next";
  */
 const apiUrl = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
 
+/**
+ * Local development only: file uploads and downloads go to /storage/..., and Next.js
+ * forwards them to the S3 container (SeaweedFS). The backend signs links for the S3
+ * container's address; Next.js sends that host on, so the signatures still match.
+ * In production this is unset: browsers talk to the object storage directly.
+ */
+const storageUrl = process.env.STORAGE_INTERNAL_URL;
+
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
@@ -19,7 +27,10 @@ const nextConfig: NextConfig = {
   // (make e2e, CI). Next.js blocks dev resources for unknown hosts by default.
   allowedDevOrigins: ["frontend"],
   async rewrites() {
-    return [{ source: "/api/:path*", destination: `${apiUrl}/api/:path*` }];
+    return [
+      { source: "/api/:path*", destination: `${apiUrl}/api/:path*` },
+      ...(storageUrl ? [{ source: "/storage/:path*", destination: `${storageUrl}/:path*` }] : []),
+    ];
   },
 };
 

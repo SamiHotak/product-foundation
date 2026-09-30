@@ -10,11 +10,13 @@ To add a job to a product:
 JOB_TASKS: dict[str, str] = {
     "example": "app.workers.tasks.example_task",
     "data_export": "app.workers.tasks.data_export",
+    "file_scan": "app.workers.tasks.file_scan",
+    "ai_summary": "app.workers.tasks.ai_summary",
 }
 
 # Jobs only the person who started them can see (not the rest of the workspace,
 # and not API keys). Use it for personal things like "export my data".
-PRIVATE_JOB_KINDS: frozenset[str] = frozenset({"data_export"})
+PRIVATE_JOB_KINDS: frozenset[str] = frozenset({"data_export", "ai_summary"})
 
 # Job kinds that count towards a monthly plan limit (app/core/plans.py -> PlanLimits).
 # Never meter GDPR jobs like "data_export": people must always get their data.

@@ -17,13 +17,18 @@ logger = get_logger(__name__)
 
 __all__ = [
     "TemporaryError",
+    "ai_summary",
     "cleanup_auth",
     "cleanup_data",
+    "cleanup_uploads",
     "data_export",
     "example_task",
+    "file_scan",
     "heartbeat",
     "purge_deleted",
+    "reset_demo",
     "send_email",
+    "send_llm_trace",
 ]
 
 
@@ -181,11 +186,25 @@ def purge_deleted() -> dict[str, int]:
     from app.core.plans import DEFAULT_CATALOG
     from app.db.session import sync_session
     from app.services.purge import purge_due
+    from app.services.storage import org_prefixes, storage_for
     from app.services.stripe_gateway import gateway_for
 
-    gateway = gateway_for(get_settings(), DEFAULT_CATALOG)
+    settings = get_settings()
+    gateway = gateway_for(settings, DEFAULT_CATALOG)
     delete_customer = gateway.delete_customer if gateway is not None else None
-    counts = purge_due(sync_session, datetime.now(UTC), delete_customer)
+    storage = storage_for(settings)
+
+    def delete_files(organization_id: Any) -> None:
+        assert storage is not None
+        for prefix in org_prefixes(organization_id):
+            storage.delete_prefix(prefix)
+
+    counts = purge_due(
+        sync_session,
+        datetime.now(UTC),
+        delete_customer,
+        delete_files if storage is not None else None,
+    )
     logger.info("purge_deleted", **counts)
     return counts
 
@@ -204,4 +223,145 @@ def cleanup_data() -> dict[str, int]:
         audit_retention_days=get_settings().audit_retention_days,
     )
     logger.info("cleanup_data", **counts)
+    return counts
+
+
+@celery_app.task(  # type: ignore[untyped-decorator]
+    bind=True,
+    base=JobTask,
+    name="app.workers.tasks.file_scan",
+    autoretry_for=(TemporaryError,),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    max_retries=5,
+)
+def file_scan(self: Any, job_id: str, file_id: str) -> dict[str, Any]:
+    """Virus-scan an uploaded file with ClamAV. Clean -> ready; infected -> deleted."""
+    from app.services.file_scan import FileGone, ScanOutcome, scan_file
+    from app.services.storage import StorageError, storage_for
+    from app.services.virus_scan import ScannerUnavailableError, scanner_for
+
+    settings = get_settings()
+    storage, scanner = storage_for(settings), scanner_for(settings)
+    if storage is None or scanner is None:
+        raise JobFailedError("File scanning is not set up.")
+    report = make_reporter(job_id)
+    report.progress(10, "Scanning the file for viruses")
+    last_try = self.request.retries >= self.max_retries
+    try:
+        outcome = scan_file(file_id, storage, scanner, give_up=last_try)
+    except FileGone as exc:
+        raise JobFailedError("The file was deleted before the scan finished.") from exc
+    except (ScannerUnavailableError, StorageError) as exc:
+        logger.warning("file_scan_retry", file_id=file_id, error=str(exc))
+        raise TemporaryError("scanner or storage not reachable") from exc
+    if outcome is ScanOutcome.INFECTED:
+        raise JobFailedError("A virus was found in this file. It was deleted.")
+    if outcome is ScanOutcome.GAVE_UP:
+        raise JobFailedError("The file could not be scanned, so it was not accepted.")
+    return {"file_id": file_id, "message": "No viruses found. The file is ready."}
+
+
+@celery_app.task(bind=True, base=JobTask, name="app.workers.tasks.ai_summary")  # type: ignore[untyped-decorator]
+def ai_summary(self: Any, job_id: str, text: str) -> dict[str, Any]:
+    """The example AI job: summarize a text through the LLM gateway.
+
+    No Celery retries: the gateway already retries temporary errors, and a new attempt
+    here would count another AI request.
+    """
+    import uuid
+
+    from app.core.errors import AppError
+    from app.db.session import sync_session
+    from app.llm.gateway import LlmGateway
+    from app.repositories.jobs import SyncJobRepository
+
+    with sync_session() as session:
+        job = SyncJobRepository(session).get(uuid.UUID(job_id))
+        if job is None:
+            raise JobFailedError("This job no longer exists.")
+        organization_id, user_id = job.organization_id, job.created_by_id
+    report = make_reporter(job_id)
+    report.progress(15, "Asking the AI")
+    gateway = LlmGateway.from_settings(get_settings())
+    try:
+        result = gateway.run(
+            "summarize",
+            text,
+            organization_id=organization_id,
+            user_id=user_id,
+            metadata={"job_id": job_id},
+        )
+    except AppError as exc:  # limit reached, AI paused, failed: all have a safe message
+        raise JobFailedError(exc.message) from exc
+    report.progress(95, "Summary ready")
+    return {
+        "summary": result.output.model_dump(),
+        "model": result.model,
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "cost_usd": result.cost_usd,
+        "latency_ms": result.latency_ms,
+        "trace_id": result.trace_id,
+        "message": "Summary ready.",
+    }
+
+
+@celery_app.task(  # type: ignore[untyped-decorator]
+    bind=True,
+    name="app.workers.tasks.send_llm_trace",
+    autoretry_for=(TemporaryError,),
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+    max_retries=8,
+)
+def send_llm_trace(self: Any, event: dict[str, Any]) -> None:
+    """Send one LLM trace to Langfuse. Retries for about an hour while it is unreachable."""
+    from app.llm.tracing import LangfuseExporter, LangfuseUnavailableError, TraceEvent
+
+    settings = get_settings()
+    if not settings.langfuse_enabled:
+        return
+    try:
+        LangfuseExporter(settings).send(TraceEvent.from_dict(event))
+    except LangfuseUnavailableError as exc:
+        logger.warning("langfuse_retry", error=str(exc))
+        raise TemporaryError("langfuse not reachable") from exc
+
+
+@celery_app.task(name="app.workers.tasks.cleanup_uploads")  # type: ignore[untyped-decorator]
+def cleanup_uploads() -> dict[str, int]:
+    """Nightly: remove uploads that were never completed, and old staged uploads."""
+    from datetime import UTC, datetime
+
+    from app.db.session import sync_session
+    from app.services.file_scan import remove_abandoned_uploads, remove_stale_staged
+
+    storage_ = _storage()
+    if storage_ is None:
+        return {"uploads": 0, "staged": 0}
+    now = datetime.now(UTC)
+    removed = remove_abandoned_uploads(sync_session, storage_, now)
+    staged = remove_stale_staged(storage_, now)
+    logger.info("cleanup_uploads", uploads=removed, staged=staged)
+    return {"uploads": removed, "staged": staged}
+
+
+def _storage() -> Any:
+    from app.services.storage import storage_for
+
+    return storage_for(get_settings())
+
+
+@celery_app.task(name="app.workers.tasks.reset_demo")  # type: ignore[untyped-decorator]
+def reset_demo() -> dict[str, Any]:
+    """Nightly: put the demo workspace back to its starting data."""
+    from app.services.demo import reset_demo_data
+
+    settings = get_settings()
+    if not settings.demo_enabled:
+        return {"skipped": True}
+    counts = reset_demo_data(settings)
+    logger.info("reset_demo", **counts)
     return counts

@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from typing import Annotated, Any
+from unittest.mock import patch
 
 from fastapi import Depends, FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -14,20 +15,33 @@ from app.core.config import Settings, get_settings
 from app.core.plans import DEFAULT_CATALOG, PlanCatalog, PlanLimits
 from app.core.rate_limit import MemoryRateLimiter, get_rate_limiter
 from app.db.session import get_db
+from app.llm.gateway import LlmGateway
 from app.main import create_app
 from app.models.job import Job
 from app.repositories.jobs import JobRepository
 from app.routers.deps import (
     get_email_sender,
     get_google_client,
+    get_job_dispatcher,
+    get_llm_gateway,
     get_payment_gateway,
     get_plan_catalog,
+    get_storage,
+    get_virus_scanner,
 )
 from app.routers.jobs import get_job_service
 from app.services.jobs import JobService
 from app.services.usage import UsageService
 from app.workers.registry import JOB_TASKS
-from tests.fakes import FakeEmailSender, FakeGateway, FakeGoogleClient
+from tests.fakes import (
+    FakeEmailSender,
+    FakeGateway,
+    FakeGoogleClient,
+    FakeScanner,
+    FakeStorage,
+    ListTracer,
+    ScriptedProvider,
+)
 
 PASSWORD = "correct horse battery"
 
@@ -39,7 +53,16 @@ def roomy_catalog() -> PlanCatalog:
     Limits are tested with the real plans in test_billing_*.py and test_usage_limits.py.
     """
     plans = tuple(
-        replace(p, limits=PlanLimits(members=None, jobs_per_month=None, api_keys=None))
+        replace(
+            p,
+            limits=PlanLimits(
+                members=None,
+                jobs_per_month=None,
+                api_keys=None,
+                storage_mb=None,
+                ai_requests_per_month=None,
+            ),
+        )
         if p.id == DEFAULT_CATALOG.free.id
         else p
         for p in DEFAULT_CATALOG.plans
@@ -58,6 +81,24 @@ class World:
     stripe: FakeGateway = field(default_factory=FakeGateway)
     catalog: PlanCatalog = field(default_factory=roomy_catalog)
     dispatched: list[Job] = field(default_factory=list)
+    storage: FakeStorage = field(default_factory=FakeStorage)
+    # None = no virus scanner configured. Set `world.scanner = FakeScanner()` to scan.
+    scanner: FakeScanner | None = None
+    provider: ScriptedProvider = field(default_factory=ScriptedProvider)
+    traces: ListTracer = field(default_factory=ListTracer)
+
+    def gateway(self) -> LlmGateway:
+        """The LLM gateway the app and the worker use in this test."""
+        from app.db.session import sync_session
+
+        return LlmGateway(
+            get_settings_for(self.app),
+            self.provider,
+            sync_session,
+            catalog=self.catalog,
+            tracer=self.traces,
+            sleep=lambda _seconds: None,
+        )
 
     @asynccontextmanager
     async def client(self, **headers: str) -> AsyncIterator[AsyncClient]:
@@ -93,12 +134,18 @@ class World:
         from app.workers.celery_app import celery_app
 
         pending, self.dispatched[:] = list(self.dispatched), []
-        for job in pending:
-            task = celery_app.tasks[JOB_TASKS[job.kind]]
-            kwargs: dict[str, Any] = {"job_id": str(job.id), **job.params}
-            if job.kind == "example":
-                kwargs["delay_seconds"] = 0
-            await asyncio.to_thread(task.apply, kwargs=kwargs, task_id=str(job.id))
+        gateway = self.gateway()
+        with (
+            patch.object(LlmGateway, "from_settings", lambda _settings: gateway),
+            patch("app.services.storage.storage_for", lambda _settings: self.storage),
+            patch("app.services.virus_scan.scanner_for", lambda _settings: self.scanner),
+        ):
+            for job in pending:
+                task = celery_app.tasks[JOB_TASKS[job.kind]]
+                kwargs: dict[str, Any] = {"job_id": str(job.id), **job.params}
+                if job.kind == "example":
+                    kwargs["delay_seconds"] = 0
+                await asyncio.to_thread(task.apply, kwargs=kwargs, task_id=str(job.id))
 
     async def invite_and_join(
         self,
@@ -148,7 +195,17 @@ def build_world(catalog: PlanCatalog | None = None, **settings_changes: Any) -> 
     app.dependency_overrides[get_job_service] = job_service
     app.dependency_overrides[get_plan_catalog] = lambda: world.catalog
     app.dependency_overrides[get_payment_gateway] = lambda: world.stripe
+    app.dependency_overrides[get_storage] = lambda: world.storage
+    app.dependency_overrides[get_virus_scanner] = lambda: world.scanner
+    app.dependency_overrides[get_llm_gateway] = world.gateway
+    app.dependency_overrides[get_job_dispatcher] = lambda: dispatch
     return world
+
+
+def get_settings_for(app: FastAPI) -> Settings:
+    """The settings this app runs with (changed ones, if the test changed them)."""
+    override = app.dependency_overrides.get(get_settings)
+    return override() if override else get_settings()
 
 
 def set_plan(

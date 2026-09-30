@@ -26,7 +26,7 @@ plugins = ["pydantic.mypy"]
 exclude = ["alembic/versions/"]
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "kombu.*"]
+module = ["celery.*", "kombu.*", "boto3.*", "botocore.*", "moto.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

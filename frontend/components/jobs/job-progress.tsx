@@ -25,6 +25,8 @@ const STATUS: Record<
 const KIND_LABELS: Record<string, string> = {
   example: "Example job",
   data_export: "Data export",
+  file_scan: "Virus scan",
+  ai_summary: "AI summary",
 };
 
 export function jobTitle(job: Pick<Job, "kind">): string {

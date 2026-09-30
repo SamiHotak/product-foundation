@@ -70,7 +70,9 @@ async def test_account_export_contains_my_data_and_no_secrets(world: World) -> N
             "sign_ins.json",
             "activity.json",
             "jobs.json",
+            "files_uploaded.json",
         }
+        assert files["files_uploaded.json"] == []
         assert files["profile.json"]["email"] == "ezat@example.com"
         assert files["profile.json"]["sign_in_with_password"] is True
         assert files["workspaces.json"][0]["workspace_id"] == me["active_organization_id"]
@@ -108,6 +110,8 @@ async def test_workspace_export_for_admins(world: World) -> None:
             "api_keys.json",
             "audit_log.json",
             "jobs.json",
+            "files.json",
+            "ai_requests.json",
         } <= set(files)
         assert sorted(x["email"] for x in files["members.json"]) == [
             "admin@example.com",

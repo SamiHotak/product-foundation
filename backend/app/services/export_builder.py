@@ -22,7 +22,9 @@ from typing import Any
 from app.models.api_key import ApiKey
 from app.models.audit_log import AuditLog
 from app.models.data_export import DataExport, ExportScope
+from app.models.file import StoredFile
 from app.models.job import Job
+from app.models.llm_call import LlmCall
 from app.repositories.exports import SyncExportReader
 
 Section = Callable[[SyncExportReader, uuid.UUID], Any]
@@ -135,6 +137,7 @@ ACCOUNT_SECTIONS: dict[str, Section] = {
     "sign_ins.json": _sessions,
     "activity.json": lambda r, uid: _audit(r.activity(uid)),
     "jobs.json": lambda r, uid: _jobs(r.jobs_by_user(uid)),
+    "files_uploaded.json": lambda r, uid: _files(r.files_by_user(uid)),
 }
 
 
@@ -160,6 +163,35 @@ def _members(r: SyncExportReader, org_id: uuid.UUID) -> list[dict[str, Any]]:
     ]
 
 
+def _files(rows: list[StoredFile]) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": f.id,
+            "filename": f.filename,
+            "content_type": f.content_type,
+            "size_bytes": f.size_bytes,
+            "status": f.status,
+            "uploaded_at": f.created_at,
+        }
+        for f in rows
+    ]
+
+
+def _llm_calls(rows: list[LlmCall]) -> list[dict[str, Any]]:
+    return [
+        {
+            "created_at": c.created_at,
+            "task": c.task,
+            "model": c.model,
+            "status": c.status,
+            "input_tokens": c.input_tokens,
+            "output_tokens": c.output_tokens,
+            "cost_usd": c.cost_micro_usd / 1_000_000,
+        }
+        for c in rows
+    ]
+
+
 def _invites(r: SyncExportReader, org_id: uuid.UUID) -> list[dict[str, Any]]:
     return [
         {
@@ -181,6 +213,9 @@ ORG_SECTIONS: dict[str, Section] = {
     "api_keys.json": lambda r, oid: _keys(r.api_keys(oid)),
     "audit_log.json": lambda r, oid: _audit(r.audit_log(oid)),
     "jobs.json": lambda r, oid: _jobs(r.jobs(oid)),
+    # The list of files. The files themselves can be large: download them in the app.
+    "files.json": lambda r, oid: _files(r.files(oid)),
+    "ai_requests.json": lambda r, oid: _llm_calls(r.llm_calls(oid)),
 }
 
 

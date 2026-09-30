@@ -12,6 +12,8 @@ class PlanLimitsOut(BaseModel):
     members: int | None
     jobs_per_month: int | None
     api_keys: int | None
+    storage_mb: int | None
+    ai_requests_per_month: int | None
 
 
 class PlanOut(BaseModel):
@@ -53,10 +55,13 @@ class RedirectResponse(BaseModel):
 class UsageItem(BaseModel):
     """One limit of the plan and how much of it is used."""
 
-    metric: Literal["members", "jobs_per_month", "api_keys"]
+    metric: Literal["members", "jobs_per_month", "api_keys", "storage_mb", "ai_requests_per_month"]
     label: str
     used: int
     limit: int | None = Field(description="null = unlimited.")
+    unit: Literal["count", "mb"] = Field(
+        default="count", description='"mb": used and limit are megabytes (file storage).'
+    )
 
 
 class BillingOverview(BaseModel):

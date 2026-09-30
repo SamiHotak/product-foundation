@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 # The scopes a key can have. Keep equal to app.core.permissions.API_KEY_SCOPES
 # (a test checks it), so the API docs and the typed client list exactly these.
-ApiKeyScope = Literal["jobs:read", "jobs:write"]
+ApiKeyScope = Literal["jobs:read", "jobs:write", "files:read", "files:write"]
 
 
 class ApiKeyCreate(BaseModel):

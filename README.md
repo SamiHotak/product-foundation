@@ -4,7 +4,7 @@ A reusable SaaS starter: FastAPI + Postgres + Redis + Celery backend, Next.js fr
 Every product (AskDocs, LeadPilot, InvoiceAI Pro, CountVision) is created from this repo
 with GitHub's **Use this template** button.
 
-**Status:** phase 2B — team invites, roles (owner / admin / member), member management, API keys for the REST API, audit log, GDPR export and deletion. Built on 2A (accounts, Google sign-in, sessions, workspaces) and phase 1 (app shell, typed API client, background jobs, CI).
+**Status:** phase 4B — file uploads (S3), the LLM gateway (AI with limits, costs and Langfuse traces), admin pages with "view as" support, and a "Try the demo" workspace. Built on 4A (Stripe billing, plan limits, emails), 3A/3B (design system, website, legal pages), 2A/2B (accounts, workspaces, roles, API keys, audit log, GDPR) and phase 1 (app shell, typed API client, background jobs, CI).
 
 ## What's inside
 
@@ -16,7 +16,8 @@ with GitHub's **Use this template** button.
 | API client | Generated TypeScript types from the FastAPI OpenAPI schema (`openapi-typescript` + `openapi-fetch`) |
 | Tests | pytest (unit + real Postgres/Redis), Playwright end-to-end in Docker |
 | CI | GitHub Actions: ruff, mypy, migrations, pytest, client check, eslint, build, Playwright |
-| Local services | Mailpit (catches emails). S3 file storage is added in phase 4B |
+| Local services | Mailpit (catches emails), SeaweedFS (S3 file storage) |
+| AI | LLM gateway (OpenAI; a free pretend model locally), Langfuse traces |
 
 More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -146,6 +147,18 @@ try everything right away. For one real Stripe **test-mode** payment, follow
 [docs/BILLING.md](docs/BILLING.md) (about 15 minutes). Emails: `make email-preview`, then open
 http://localhost:8025.
 
+## Files, AI, admin and demo
+
+- **Files** (`/files`): upload (drag and drop), download, delete. Files go straight to the
+  S3 storage and are checked after upload (size, real file type, optional virus scan).
+- **AI summary** (dashboard): the example AI feature. Locally a free pretend model answers;
+  with `OPENAI_API_KEY` in `backend/.env` the real model. Costs show up in Langfuse.
+- **Admin** (`/admin`): `make admin email=you@example.com`, then open `/admin` (numbers,
+  AI kill switch, failed jobs, read-only "view as" a user for support).
+- **Try the demo** (login page): a shared sample workspace, reset every night.
+
+How it all works and what to set up before production: [docs/FILES_AND_AI.md](docs/FILES_AND_AI.md).
+
 ## Privacy (GDPR)
 
 **Settings → Privacy**: download a ZIP of your data (or the whole workspace, for admins), delete
@@ -168,11 +181,14 @@ nightly job (Celery beat) deletes what is due. Every team change is in **Setting
 | `make check` | Everything CI checks: lint, tests, API client, e2e. Run before `git push` |
 | `make migrate` | Apply database migrations |
 | `make migration name=add_users` | Create a migration after changing models |
-| `make seed` | Load development data |
+| `make seed` | Create the demo workspace (`ARGS=--reset` puts it back to the start) |
 | `make example-job` | Run the example background job and watch its progress |
 | `make stripe-sync` | Create/update the Stripe products and prices from `plans.py` (`ARGS=--dry-run` to preview) |
 | `make stripe-listen` | Forward Stripe test webhooks to your app (keep it open; Ctrl+C stops) |
 | `make email-preview` | Send one of every email to Mailpit (http://localhost:8025) |
+| `make admin email=you@example.com` | Give a user the `/admin` pages (`ARGS=--remove` takes them away) |
+| `make storage-setup` | Create the file bucket + upload rules (production, once; not needed locally) |
+| `make eval` | Score the AI summary on its test set (`ARGS=--live`: the real model, costs cents) |
 | `make shell` | Shell inside the backend container |
 | `make psql` | Postgres console |
 | `make clean` | Stop everything and **delete** local data |

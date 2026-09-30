@@ -18,6 +18,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { CreateWorkspaceDialog } from "@/components/layout/create-workspace-dialog";
+import { canSee } from "@/components/layout/nav-links";
 import { useSession } from "@/components/session-provider";
 import { SETTINGS_PAGES } from "@/components/settings/settings-nav";
 import { useTheme } from "@/components/theme-provider";
@@ -75,7 +76,8 @@ function useIsMac(): boolean {
  */
 export function CommandPalette() {
   const router = useRouter();
-  const { organizations, activeOrganization, can } = useSession();
+  const session = useSession();
+  const { organizations, activeOrganization, can } = session;
   const { setTheme } = useTheme();
   const isMac = useIsMac();
   const [open, setOpen] = useState(false);
@@ -100,7 +102,7 @@ export function CommandPalette() {
   const commands = useMemo<Command[]>(() => {
     const go = (href: string) => () => router.push(href);
     const pages: Command[] = [...product.nav, ...product.navFooter]
-      .filter((item) => !item.needs || can(item.needs))
+      .filter((item) => canSee(item, session))
       .map((item) => ({
         id: `page:${item.href}`,
         group: "Pages",
@@ -195,7 +197,7 @@ export function CommandPalette() {
       run: () => setTheme(t.value as "light" | "dark" | "system"),
     }));
     return [...pages, ...settings, ...actions, ...workspaces, ...theme];
-  }, [router, can, organizations, activeOrganization.id, setTheme]);
+  }, [router, can, session, organizations, activeOrganization.id, setTheme]);
 
   // Grouped (in the order groups first appear), then flat for the arrow keys.
   const groups = useMemo(() => {

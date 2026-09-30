@@ -233,6 +233,17 @@ function CurrentPlan({ overview: o, plans }: { overview: BillingOverview; plans:
   );
 }
 
+/** Counters that start again every month (reaching them stops the work until then). */
+const MONTHLY = new Set(["jobs_per_month", "ai_requests_per_month"]);
+
+/** "1,234" or, for storage, "250 MB" / "10 GB". */
+function amount(value: number, unit: UsageItem["unit"]): string {
+  if (unit !== "mb") return value.toLocaleString("en");
+  return value >= 1024
+    ? `${(value / 1024).toLocaleString("en", { maximumFractionDigits: 1 })} GB`
+    : `${value.toLocaleString("en")} MB`;
+}
+
 function UsageMeters({ usage }: { usage: UsageItem[] }) {
   return (
     <ul className="grid gap-4 sm:grid-cols-3" aria-label="Usage">
@@ -242,12 +253,13 @@ function UsageMeters({ usage }: { usage: UsageItem[] }) {
         const percent = unlimited ? 0 : limit === 0 ? 100 : (u.used / limit) * 100;
         const over = !unlimited && u.used > limit;
         const full = !unlimited && u.used >= limit;
-        // Monthly usage at the limit blocks work; people/keys at the limit only block adding.
-        const blocking = over || (full && u.metric === "jobs_per_month");
+        // Monthly usage at the limit blocks work; people/keys/files at the limit only block adding.
+        const monthly = MONTHLY.has(u.metric);
+        const blocking = over || (full && monthly);
         const note = over
           ? "Over the plan limit: remove some or upgrade"
           : full
-            ? u.metric === "jobs_per_month"
+            ? monthly
               ? "Limit reached"
               : "All used: upgrade to add more"
             : null;
@@ -259,15 +271,17 @@ function UsageMeters({ usage }: { usage: UsageItem[] }) {
           >
             <p className="text-sm text-ink-muted">{u.label}</p>
             <p className="text-lg font-semibold tabular">
-              {u.used.toLocaleString("en")}
+              {amount(u.used, u.unit)}
               <span className="text-sm font-normal text-ink-muted">
-                {unlimited ? " (no limit)" : ` of ${u.limit!.toLocaleString("en")}`}
+                {unlimited ? " (no limit)" : ` of ${amount(limit, u.unit)}`}
               </span>
             </p>
             <ProgressBar
               value={percent}
               tone={blocking ? "danger" : unlimited ? "muted" : "accent"}
-              label={`${u.label}: ${u.used} of ${unlimited ? "unlimited" : u.limit}`}
+              label={`${u.label}: ${amount(u.used, u.unit)} of ${
+                unlimited ? "unlimited" : amount(limit, u.unit)
+              }`}
             />
             {note && (
               <p className={cn("text-xs", blocking ? "text-danger" : "text-ink-muted")}>{note}</p>

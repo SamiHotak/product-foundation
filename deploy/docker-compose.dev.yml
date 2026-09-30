@@ -3,10 +3,10 @@
 #   App (Next.js)      http://localhost:3000
 #   API docs           http://localhost:8000/api/docs
 #   Mailpit (emails)   http://localhost:8025
+#   S3 file storage    http://localhost:8333 (SeaweedFS; the app reaches it as /storage)
 #
 # `make e2e` also starts the `e2e` service (profile "e2e"): Playwright in Docker.
 #
-# Local S3 file storage is added in phase 4B (when file uploads are built).
 # Code folders are mounted, so saving a file reloads the backend, worker and frontend.
 # Dev-only passwords below are fine locally. Production uses real secrets (phase 5).
 
@@ -32,6 +32,18 @@ x-backend-env: &backend-env
   # Billing: without STRIPE_SECRET_KEY the app uses a pretend checkout (local only). With a
   # Stripe TEST key in backend/.env it uses real Stripe test mode. See docs/BILLING.md.
   BILLING_DEV_TOOLS: "true"
+  # File storage: SeaweedFS (the `s3` service below). Browsers upload through the Next.js
+  # server (/storage -> s3:8333), so nothing else needs to be reachable. See docs/FILES_AND_AI.md.
+  S3_ENDPOINT: http://s3:8333
+  S3_PUBLIC_URL: /storage
+  S3_BUCKET: foundation-files
+  S3_ACCESS_KEY: dev-access-key
+  S3_SECRET_KEY: dev-secret-key
+  # AI: without OPENAI_API_KEY (in backend/.env) a pretend model answers (free, fixed
+  # answers). With a key the real model is used. Langfuse keys also go in backend/.env.
+  LLM_DEV_FAKE: "true"
+  # "Try the demo" button on the login page (make seed creates the data; it resets nightly).
+  DEMO_ENABLED: "true"
   # Windows + Docker Desktop: file change events don't cross into containers, so poll.
   WATCHFILES_FORCE_POLLING: "true"
 
@@ -47,6 +59,8 @@ x-backend-base: &backend-base
     postgres:
       condition: service_healthy
     redis:
+      condition: service_healthy
+    s3:
       condition: service_healthy
 
 services:
@@ -82,6 +96,30 @@ services:
     ports:
       - "1025:1025"
       - "8025:8025"
+
+  # Local S3 file storage: SeaweedFS "mini" (storage, filer and S3 API in one container).
+  # MinIO stopped publishing Docker images in 2025, so we use SeaweedFS (Apache-2.0).
+  # It creates the bucket on start. Production uses Hetzner Object Storage instead.
+  s3:
+    image: chrislusf/seaweedfs:4.47
+    # externalUrl: download links are signed for http://s3:8333. They reach SeaweedFS through
+    # the Next.js proxy (/storage), which adds X-Forwarded-Host; this tells SeaweedFS to check
+    # signatures against s3:8333 first.
+    command: ["mini", "-dir=/data", "-s3.externalUrl=http://s3:8333"]
+    environment:
+      AWS_ACCESS_KEY_ID: dev-access-key
+      AWS_SECRET_ACCESS_KEY: dev-secret-key
+      S3_BUCKET: foundation-files
+    ports:
+      - "8333:8333"
+    volumes:
+      - s3-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8333/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 10s
 
   backend:
     <<: *backend-base
@@ -132,6 +170,8 @@ services:
     image: foundation-frontend:dev
     environment:
       API_INTERNAL_URL: http://backend:8000
+      # Where Next.js forwards /storage/... (file uploads and downloads, see next.config.ts).
+      STORAGE_INTERNAL_URL: http://s3:8333
       # Public address of the website (sitemap.xml, robots.txt, link previews).
       APP_URL: http://localhost:3000
       WATCHPACK_POLLING: "true"
@@ -201,3 +241,4 @@ services:
 
 volumes:
   postgres-data:
+  s3-data:

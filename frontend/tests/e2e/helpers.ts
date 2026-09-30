@@ -85,3 +85,14 @@ export async function setPlan(page: Page, planId: "free" | "pro" | "business"): 
   const res = await page.request.post("/api/billing/dev/set-plan", { data: { plan_id: planId } });
   expect(res.status(), "set-plan needs BILLING_DEV_TOOLS=true (docker-compose.dev.yml)").toBe(204);
 }
+
+/**
+ * Make the signed-in user an admin of the whole app (dev-only endpoint, like setPlan).
+ * On a server you use `make admin email=...` instead.
+ */
+export async function makeAdmin(page: Page): Promise<void> {
+  const res = await page.request.post("/api/billing/dev/make-admin");
+  expect(res.status(), "make-admin needs BILLING_DEV_TOOLS=true (docker-compose.dev.yml)").toBe(
+    204,
+  );
+}

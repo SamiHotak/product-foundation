@@ -5,7 +5,7 @@ Roles (per workspace):
           ownership to someone else, and billing (plan, payment method, invoices).
 - admin   manages the team (invite, change roles, remove), API keys, audit log, exports.
           Can never change or remove the owner.
-- member  uses the product. Sees who is in the team.
+- member  uses the product. Sees who is in the team. Uploads files and deletes their own.
 
 API keys get *scopes*, which are a subset of the permissions below (`API_KEY_SCOPES`).
 So one check works for both: `caller.can(Permission.JOBS_READ)`.
@@ -31,6 +31,10 @@ class Permission(StrEnum):
     BILLING_MANAGE = "billing:manage"
     JOBS_READ = "jobs:read"
     JOBS_WRITE = "jobs:write"
+    FILES_READ = "files:read"
+    FILES_WRITE = "files:write"  # upload, and delete your own files
+    FILES_MANAGE = "files:manage"  # delete anyone's files
+    AI_USE = "ai:use"
 
 
 _MEMBER = frozenset(
@@ -38,9 +42,13 @@ _MEMBER = frozenset(
         Permission.MEMBERS_READ,
         Permission.JOBS_READ,
         Permission.JOBS_WRITE,
+        Permission.FILES_READ,
+        Permission.FILES_WRITE,
+        Permission.AI_USE,
     }
 )
 _ADMIN = _MEMBER | {
+    Permission.FILES_MANAGE,
     Permission.ORG_UPDATE,
     Permission.ORG_EXPORT,
     Permission.MEMBERS_INVITE,
@@ -63,7 +71,9 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
 
 # What an API key may be allowed to do. Team, billing and key management stay
 # with signed-in people, so a leaked key can never lock the owner out.
-API_KEY_SCOPES: frozenset[Permission] = frozenset({Permission.JOBS_READ, Permission.JOBS_WRITE})
+API_KEY_SCOPES: frozenset[Permission] = frozenset(
+    {Permission.JOBS_READ, Permission.JOBS_WRITE, Permission.FILES_READ, Permission.FILES_WRITE}
+)
 
 
 def role_permissions(role: str) -> frozenset[Permission]:

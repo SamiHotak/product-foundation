@@ -56,10 +56,16 @@ export function useRecentJobs({ limit = 8, intervalMs = 1000 } = {}) {
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [startErrorCause, setStartErrorCause] = useState<unknown>(null);
+  // Goes up when a job is started here. A list that was requested BEFORE that is older
+  // than what we show (it doesn't have the new job yet), so it is ignored; polling
+  // brings the fresh list a moment later.
+  const version = useRef(0);
 
   const load = useCallback(async () => {
+    const requestedAt = version.current;
     try {
       const data = await unwrap(api.GET("/api/jobs", { params: { query: { limit } } }));
+      if (requestedAt !== version.current) return;
       setState({ jobs: data.items, loadError: null });
     } catch (err) {
       setState((prev) => ({ ...prev, loadError: errorMessage(err) }));
@@ -82,6 +88,7 @@ export function useRecentJobs({ limit = 8, intervalMs = 1000 } = {}) {
       try {
         const job = await unwrap(api.POST("/api/jobs/example", { body }));
         window.dispatchEvent(new Event(ONBOARDING_REFRESH)); // "Run a job" step may be done now
+        version.current += 1;
         // Show the new job immediately; polling takes over from here.
         setState((prev) => ({
           ...prev,

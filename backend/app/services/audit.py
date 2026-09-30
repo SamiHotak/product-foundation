@@ -51,6 +51,12 @@ class AuditAction(StrEnum):
     BILLING_CHECKOUT_STARTED = "billing.checkout_started"
     BILLING_PLAN_CHANGED = "billing.plan_changed"
     BILLING_RENEWAL_CHANGED = "billing.renewal_changed"
+    FILE_UPLOADED = "file.uploaded"
+    FILE_DELETED = "file.deleted"
+    ADMIN_IMPERSONATION_STARTED = "admin.impersonation_started"
+    ADMIN_IMPERSONATION_ENDED = "admin.impersonation_ended"
+    ADMIN_AI_SWITCHED = "admin.ai_switched"
+    ADMIN_JOB_RETRIED = "admin.job_retried"
 
 
 @dataclass(frozen=True)
@@ -107,11 +113,16 @@ def decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
 
 
 class AuditService:
-    """Writes and reads audit events. One instance per request."""
+    """Writes and reads audit events. One instance per request.
 
-    def __init__(self, db: AsyncSession, meta: RequestMeta) -> None:
+    While an admin views the app as someone else, every event of that request also gets
+    `impersonated_by` (the admin's email), so the workspace sees who really did it.
+    """
+
+    def __init__(self, db: AsyncSession, meta: RequestMeta, state: Any = None) -> None:
         self._repo = AuditRepository(db)
         self._meta = meta
+        self._state = state  # the request's state (deps.py puts the impersonator there)
 
     async def record(
         self,
@@ -125,6 +136,9 @@ class AuditService:
         details: dict[str, Any] | None = None,
     ) -> None:
         """Add an event. It is saved when the caller commits (together with the change)."""
+        impersonator = getattr(self._state, "impersonator_email", None)
+        if impersonator and actor_user_id is not None:
+            details = {**(details or {}), "impersonated_by": impersonator}
         await self._repo.add(
             AuditLog(
                 organization_id=organization_id,

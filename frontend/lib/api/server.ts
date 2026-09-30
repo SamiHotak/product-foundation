@@ -36,9 +36,9 @@ export async function getMe(): Promise<Me | null> {
 export async function getProviders(): Promise<AuthProviders> {
   try {
     const { data } = await (await serverClient()).GET("/api/auth/providers");
-    return data ?? { password: true, google: false };
+    return data ?? { password: true, google: false, demo: false };
   } catch {
-    return { password: true, google: false };
+    return { password: true, google: false, demo: false };
   }
 }
 

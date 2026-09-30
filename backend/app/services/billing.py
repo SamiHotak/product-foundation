@@ -84,6 +84,8 @@ def _plan_out(plan: PlanDefinition) -> PlanOut:
             members=plan.limits.members,
             jobs_per_month=plan.limits.jobs_per_month,
             api_keys=plan.limits.api_keys,
+            storage_mb=plan.limits.storage_mb,
+            ai_requests_per_month=plan.limits.ai_requests_per_month,
         ),
     )
 

@@ -21,13 +21,17 @@ from app.core.errors import UnauthorizedError
 from app.core.permissions import Permission
 from app.core.plans import DEFAULT_CATALOG, PlanCatalog
 from app.core.rate_limit import RateLimiter, get_rate_limiter
+from app.core.restrictions import check_session_restrictions
 from app.db.session import get_db
+from app.llm.gateway import LlmGateway
 from app.models.session import UserSession
 from app.models.user import User
 from app.repositories.jobs import JobRepository
 from app.repositories.sessions import SessionRepository
 from app.repositories.users import UserRepository
 from app.services.account import AccountService
+from app.services.admin import AdminService
+from app.services.ai import AiService
 from app.services.api_keys import ApiKeyService
 from app.services.audit import AuditService, RequestMeta
 from app.services.auth import AuthService
@@ -35,15 +39,18 @@ from app.services.billing import BillingService
 from app.services.deletion import DeletionService
 from app.services.email import CeleryEmailSender, EmailSender
 from app.services.exports import ExportService
+from app.services.files import FileService
 from app.services.google_oauth import GoogleClient, HttpGoogleClient
 from app.services.invites import InviteService
-from app.services.jobs import JobService
+from app.services.jobs import Dispatcher, JobService
 from app.services.members import MemberService
 from app.services.onboarding import OnboardingService
 from app.services.organizations import Caller, OrganizationService, OrgContext
 from app.services.sessions import SessionService
+from app.services.storage import ObjectStorage, storage_for
 from app.services.stripe_gateway import PaymentGateway, gateway_for
 from app.services.usage import UsageService
+from app.services.virus_scan import VirusScanner, scanner_for
 from app.workers.dispatch import celery_dispatch
 
 Db = Annotated[AsyncSession, Depends(get_db)]
@@ -93,10 +100,10 @@ def get_google_client(settings: AppSettings) -> GoogleClient | None:
 
 
 def get_audit_service(
-    db: Db, meta: Annotated[RequestMeta, Depends(get_request_meta)]
+    request: Request, db: Db, meta: Annotated[RequestMeta, Depends(get_request_meta)]
 ) -> AuditService:
     """Audit log writer for this request."""
-    return AuditService(db, meta)
+    return AuditService(db, meta, request.state)
 
 
 Audit = Annotated[AuditService, Depends(get_audit_service)]
@@ -118,6 +125,11 @@ def get_auth_service(
 def get_org_service(db: Db, audit: Audit) -> OrganizationService:
     """Organization service for this request."""
     return OrganizationService(db, audit)
+
+
+def get_job_dispatcher() -> Dispatcher:
+    """Sends jobs to the Celery queue (tests collect them instead)."""
+    return celery_dispatch
 
 
 def get_job_service(db: Db, catalog: Catalog) -> JobService:
@@ -193,6 +205,45 @@ def get_billing_service(
     return BillingService(db, settings, catalog, gateway, email_sender, audit)
 
 
+def get_storage(settings: AppSettings) -> ObjectStorage | None:
+    """S3-compatible file storage, or None when it is not configured (tests: a fake)."""
+    return storage_for(settings)
+
+
+Storage = Annotated[ObjectStorage | None, Depends(get_storage)]
+
+
+def get_virus_scanner(settings: AppSettings) -> VirusScanner | None:
+    """ClamAV when CLAMAV_HOST is set, else None (files are not scanned)."""
+    return scanner_for(settings)
+
+
+def get_file_service(
+    db: Db,
+    settings: AppSettings,
+    storage: Storage,
+    audit: Audit,
+    catalog: Catalog,
+    jobs: Jobs,
+    scanner: Annotated[VirusScanner | None, Depends(get_virus_scanner)],
+) -> FileService:
+    """File service for this request."""
+    return FileService(db, settings, storage, audit, catalog, jobs, scan=scanner is not None)
+
+
+def get_llm_gateway(settings: AppSettings) -> LlmGateway:
+    """The LLM gateway (tests use one with a fake provider)."""
+    return LlmGateway.from_settings(settings)
+
+
+Llm = Annotated[LlmGateway, Depends(get_llm_gateway)]
+
+
+def get_ai_service(db: Db, gateway: Llm, jobs: Jobs, catalog: Catalog) -> AiService:
+    """AI service for this request."""
+    return AiService(db, gateway, jobs, catalog)
+
+
 Members = Annotated[MemberService, Depends(get_member_service)]
 Invites = Annotated[InviteService, Depends(get_invite_service)]
 ApiKeys = Annotated[ApiKeyService, Depends(get_api_key_service)]
@@ -201,6 +252,23 @@ Deletions = Annotated[DeletionService, Depends(get_deletion_service)]
 Accounts = Annotated[AccountService, Depends(get_account_service)]
 Onboarding = Annotated[OnboardingService, Depends(get_onboarding_service)]
 Billing = Annotated[BillingService, Depends(get_billing_service)]
+Files = Annotated[FileService, Depends(get_file_service)]
+Ai = Annotated[AiService, Depends(get_ai_service)]
+
+
+def get_admin_service(
+    db: Db,
+    settings: AppSettings,
+    audit: Audit,
+    sessions: Sessions,
+    gateway: Llm,
+    dispatch: Annotated[Dispatcher, Depends(get_job_dispatcher)],
+) -> AdminService:
+    """Admin service for this request."""
+    return AdminService(db, settings, audit, sessions, gateway, dispatch)
+
+
+Admin = Annotated[AdminService, Depends(get_admin_service)]
 
 
 # --- who is calling -----------------------------------------------------------------------
@@ -224,8 +292,23 @@ async def _session_auth(
     user = await UserRepository(db).get(user_session.user_id)
     if user is None or not user.is_active:
         raise UnauthorizedError("Please sign in.")
+    if user.is_demo and not settings.demo_enabled:  # demo switched off: its sessions end
+        raise UnauthorizedError("Please sign in.")
     if db.dirty:  # sliding expiry was extended
         await db.commit()
+    if user_session.impersonator_id is not None:
+        admin = await UserRepository(db).get(user_session.impersonator_id)
+        if admin is None or not admin.is_superuser:  # no longer an admin: the view ends
+            raise UnauthorizedError("Please sign in.")
+        request.state.impersonator_email = admin.email
+    # Demo user: read-mostly. Admin viewing as someone: no account or money actions.
+    check_session_restrictions(
+        request.method,
+        request.url.path,
+        api_prefix=settings.api_prefix,
+        is_demo=user.is_demo,
+        impersonating=user_session.impersonator_id is not None,
+    )
     return CurrentAuth(user=user, session=user_session)
 
 
@@ -245,6 +328,15 @@ async def get_org_context(current: CurrentUser, orgs: Orgs) -> OrgContext:
 
 
 OrgCtx = Annotated[OrgContext, Depends(get_org_context)]
+
+
+async def get_admin_user(current: CurrentUser) -> CurrentAuth:
+    """403 unless an app admin (superuser) signed in as themselves."""
+    AdminService.require_admin(current.user, current.session)
+    return current
+
+
+AppAdmin = Annotated[CurrentAuth, Depends(get_admin_user)]
 
 
 def require(permission: Permission) -> Any:
@@ -292,12 +384,19 @@ def allow_api_keys(permission: Permission) -> Any:
 # --- cookies ------------------------------------------------------------------------------
 
 
-def set_session_cookie(response: Response, token: str, settings: Settings) -> None:
+def set_session_cookie(
+    response: Response,
+    token: str,
+    settings: Settings,
+    *,
+    name: str | None = None,
+    max_age: int | None = None,
+) -> None:
     """httpOnly (no JavaScript access), SameSite=Lax (not sent on cross-site POSTs)."""
     response.set_cookie(
-        settings.session_cookie_name,
+        name or settings.session_cookie_name,
         token,
-        max_age=settings.session_days * 24 * 3600,
+        max_age=max_age if max_age is not None else settings.session_days * 24 * 3600,
         httponly=True,
         secure=bool(settings.session_cookie_secure),
         samesite="lax",
@@ -305,12 +404,19 @@ def set_session_cookie(response: Response, token: str, settings: Settings) -> No
     )
 
 
-def clear_session_cookie(response: Response, settings: Settings) -> None:
+def clear_session_cookie(
+    response: Response, settings: Settings, *, name: str | None = None
+) -> None:
     """Remove the cookie in the browser."""
     response.delete_cookie(
-        settings.session_cookie_name,
+        name or settings.session_cookie_name,
         httponly=True,
         secure=bool(settings.session_cookie_secure),
         samesite="lax",
         path="/",
     )
+
+
+def admin_cookie_name(settings: Settings) -> str:
+    """While an admin views the app as someone else, their own session waits here."""
+    return f"{settings.session_cookie_name}_admin"

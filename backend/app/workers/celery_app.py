@@ -56,6 +56,16 @@ celery_app.conf.update(
             "task": "app.workers.tasks.cleanup_data",
             "schedule": crontab(hour=3, minute=37),
         },
+        # Uploads that were started but never finished (and their stored bytes).
+        "cleanup-uploads-nightly": {
+            "task": "app.workers.tasks.cleanup_uploads",
+            "schedule": crontab(hour=3, minute=47),
+        },
+        # The "Try the demo" workspace goes back to its starting data (if demo mode is on).
+        "reset-demo-nightly": {
+            "task": "app.workers.tasks.reset_demo",
+            "schedule": crontab(hour=4, minute=7),
+        },
     },
 )
 

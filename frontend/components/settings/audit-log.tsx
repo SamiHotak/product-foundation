@@ -71,6 +71,18 @@ function describe(entry: AuditEntry): string {
       return `changed the plan from ${text(d, "from")} to ${text(d, "to")}`;
     case "billing.renewal_changed":
       return d.renews ? "turned renewal back on" : "cancelled the plan at the end of the period";
+    case "file.uploaded":
+      return `uploaded the file “${text(d, "filename")}”`;
+    case "file.deleted":
+      return `deleted the file “${text(d, "filename")}”`;
+    case "admin.impersonation_started":
+      return `(app support) started viewing the app as ${text(d, "user")} for ${String(d.minutes ?? "")} minutes`;
+    case "admin.impersonation_ended":
+      return "(app support) stopped viewing the app as this user";
+    case "admin.job_retried":
+      return `(app support) ran a failed ${text(d, "kind")} job again`;
+    case "admin.ai_switched":
+      return d.paused ? "paused all AI features" : "turned AI features back on";
     default:
       return entry.action;
   }
@@ -220,6 +232,12 @@ export function AuditLog() {
                 >
                   <p className="min-w-0 flex-1">
                     <span className="font-medium">{actorName(entry)}</span> {describe(entry)}
+                    {typeof (entry.details as Details).impersonated_by === "string" && (
+                      <span className="text-ink-muted">
+                        {" "}
+                        (done by support: {text(entry.details as Details, "impersonated_by")})
+                      </span>
+                    )}
                   </p>
                   <p className="text-xs text-ink-muted tabular">
                     {formatTime(entry.created_at)}

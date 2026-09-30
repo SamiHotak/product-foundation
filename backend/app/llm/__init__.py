@@ -1,5 +1,12 @@
-"""LLM gateway — the one place where all LLM calls happen (built in phase 4B).
+"""LLM gateway: the one place where every LLM call happens.
 
-Planned: model per task from config, structured output, retries, timeouts,
-token + cost accounting per org, Langfuse tracing, per-plan limits, kill switch.
+- tasks.py       what we ask a model to do (model, instructions, output schema, limits)
+- guardrails.py  user content is data, never instructions; input size limits
+- providers.py   OpenAI (Responses API + Structured Outputs) and a pretend model for dev
+- gateway.py     kill switches, plan limits, retries, cost accounting, the llm_calls log
+- pricing.py     USD per 1M tokens per model
+- tracing.py     traces to Langfuse (OpenTelemetry), sent by the worker
+- evals/         evaluation sets and the runner (`make eval`)
+
+See docs/FILES_AND_AI.md.
 """

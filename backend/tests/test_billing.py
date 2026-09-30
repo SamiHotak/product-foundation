@@ -100,7 +100,13 @@ async def test_new_workspace_is_on_free_with_usage(world: World) -> None:
         assert body["can_manage"] is True and body["trial_available"] is True
         assert body["has_billing_account"] is False
         usage = {u["metric"]: (u["used"], u["limit"]) for u in body["usage"]}
-        assert usage == {"members": (1, 1), "jobs_per_month": (0, 50), "api_keys": (0, 1)}
+        assert usage == {
+            "members": (1, 1),
+            "jobs_per_month": (0, 50),
+            "api_keys": (0, 1),
+            "storage_mb": (0, 100),
+            "ai_requests_per_month": (0, 50),
+        }
         today = datetime.now(UTC).date()
         resets = date.fromisoformat(body["usage_resets_on"])
         assert resets.day == 1 and resets > today and (resets - today).days <= 31

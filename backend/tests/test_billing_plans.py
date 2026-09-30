@@ -18,7 +18,13 @@ async def test_plans_are_public_and_match_the_config(client: AsyncClient) -> Non
     assert [p["id"] for p in body["plans"]] == [p.id for p in plan_config.PLANS if p.public]
     pro = next(p for p in body["plans"] if p["id"] == "pro")
     assert pro["price_monthly"] == 2900
-    assert pro["limits"] == {"members": 5, "jobs_per_month": 2000, "api_keys": 10}
+    assert pro["limits"] == {
+        "members": 5,
+        "jobs_per_month": 2000,
+        "api_keys": 10,
+        "storage_mb": 10_240,
+        "ai_requests_per_month": 2000,
+    }
     assert pro["highlighted"] is True
 
 

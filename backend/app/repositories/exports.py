@@ -15,8 +15,10 @@ from sqlalchemy.orm import Session, undefer
 from app.models.api_key import ApiKey
 from app.models.audit_log import AuditLog
 from app.models.data_export import DataExport, ExportScope
+from app.models.file import FileStatus, StoredFile
 from app.models.invite import Invite
 from app.models.job import Job
+from app.models.llm_call import LlmCall
 from app.models.organization import Membership, Organization
 from app.models.session import UserSession
 from app.models.user import User
@@ -137,6 +139,19 @@ class SyncExportReader:
             )
         )
 
+    def files_by_user(self, user_id: uuid.UUID) -> list[StoredFile]:
+        """Files the user uploaded (in any workspace)."""
+        return list(
+            self._session.scalars(
+                select(StoredFile)
+                .where(
+                    StoredFile.uploaded_by_id == user_id,
+                    StoredFile.status != FileStatus.REJECTED,
+                )
+                .order_by(StoredFile.created_at)
+            )
+        )
+
     # --- workspace -----------------------------------------------------------------------
 
     def organization(self, organization_id: uuid.UUID) -> Organization | None:
@@ -188,6 +203,29 @@ class SyncExportReader:
         return list(
             self._session.scalars(
                 select(Job).where(Job.organization_id == organization_id).order_by(Job.created_at)
+            )
+        )
+
+    def files(self, organization_id: uuid.UUID) -> list[StoredFile]:
+        """The workspace's files (the list; the files themselves are downloaded in the app)."""
+        return list(
+            self._session.scalars(
+                select(StoredFile)
+                .where(
+                    StoredFile.organization_id == organization_id,
+                    StoredFile.status != FileStatus.REJECTED,
+                )
+                .order_by(StoredFile.created_at)
+            )
+        )
+
+    def llm_calls(self, organization_id: uuid.UUID) -> list[LlmCall]:
+        """The workspace's AI requests (no prompts or answers are stored)."""
+        return list(
+            self._session.scalars(
+                select(LlmCall)
+                .where(LlmCall.organization_id == organization_id)
+                .order_by(LlmCall.created_at)
             )
         )
 

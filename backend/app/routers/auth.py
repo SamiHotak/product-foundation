@@ -1,5 +1,6 @@
 """Auth endpoints. Thin: rate-limit, call AuthService, manage the session cookie."""
 
+import asyncio
 import secrets
 import uuid
 from typing import Annotated
@@ -8,10 +9,11 @@ from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 
 from app.core.config import Settings
-from app.core.errors import RateLimitedError
+from app.core.errors import NotFoundError, RateLimitedError, ServiceUnavailableError
 from app.core.logging import get_logger
 from app.core.rate_limit import RateLimiter, get_rate_limiter
 from app.models.user import User
+from app.repositories.users import UserRepository
 from app.routers.deps import (
     AppSettings,
     Auth,
@@ -37,9 +39,11 @@ from app.schemas.auth import (
 )
 from app.schemas.errors import error_responses
 from app.services.auth import GoogleSignInError
+from app.services.demo import seed_demo
 from app.services.google_oauth import GoogleAuthError, GoogleClient, new_pkce_pair
 from app.services.organizations import OrganizationService
 from app.services.sessions import SessionService
+from app.services.storage import storage_for
 
 logger = get_logger(__name__)
 
@@ -94,7 +98,36 @@ async def start_session(
 @router.get("/providers", response_model=AuthProviders, summary="Sign-in options")
 async def providers(settings: AppSettings) -> AuthProviders:
     """Which buttons the login page should show."""
-    return AuthProviders(google=settings.google_enabled)
+    return AuthProviders(google=settings.google_enabled, demo=settings.demo_enabled)
+
+
+@router.post(
+    "/demo",
+    response_model=MeResponse,
+    dependencies=RateLimited,
+    responses=error_responses(404, 429, 503),
+    summary="Try the demo",
+)
+async def demo_login(
+    request: Request,
+    response: Response,
+    db: Db,
+    sessions: Sessions,
+    orgs: Orgs,
+    settings: AppSettings,
+) -> MeResponse:
+    """Signs this browser in as the shared, read-mostly demo user (DEMO_ENABLED only)."""
+    if not settings.demo_enabled:
+        raise NotFoundError("The demo is not available.")
+    try:
+        user_id = await asyncio.to_thread(seed_demo, settings, storage_for(settings))
+    except RuntimeError as exc:  # DEMO_EMAIL belongs to a real account
+        logger.error("demo_misconfigured", error=str(exc))
+        raise ServiceUnavailableError("The demo is not available right now.") from exc
+    user = await UserRepository(db).get(user_id)
+    if user is None or not user.is_demo:  # pragma: no cover - seed_demo guarantees it
+        raise ServiceUnavailableError("The demo is not available right now.")
+    return await start_session(request, response, user, sessions, orgs, settings)
 
 
 @router.post(

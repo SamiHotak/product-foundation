@@ -232,7 +232,14 @@ async def test_member_role_limits(world: World) -> None:
     async with world.client() as owner, world.client() as member:
         await world.signup_and_verify(owner, "owner@example.com")
         joined = await world.invite_and_join(owner, member, "m@example.com")
-        assert set(joined["permissions"]) == {"members:read", "jobs:read", "jobs:write"}
+        assert set(joined["permissions"]) == {
+            "members:read",
+            "jobs:read",
+            "jobs:write",
+            "files:read",
+            "files:write",
+            "ai:use",
+        }
         owner_id = (await owner.get("/api/auth/me")).json()["user"]["id"]
 
         # A member sees the team ...

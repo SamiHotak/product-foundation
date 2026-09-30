@@ -27,6 +27,12 @@ import { maxLength, required, rules } from "@/lib/validation";
 const SCOPES: { value: ApiKeyScope; label: string; hint: string }[] = [
   { value: "jobs:read", label: "Read jobs", hint: "See background jobs and their progress." },
   { value: "jobs:write", label: "Start jobs", hint: "Start new background jobs." },
+  { value: "files:read", label: "Read files", hint: "List files and download them." },
+  {
+    value: "files:write",
+    label: "Upload files",
+    hint: "Upload new files. Keys can never delete files.",
+  },
 ];
 
 const EXPIRY: { label: string; days: number | null }[] = [

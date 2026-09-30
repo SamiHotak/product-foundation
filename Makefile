@@ -5,7 +5,7 @@ COMPOSE = docker compose -f deploy/docker-compose.dev.yml
 s ?=
 ARGS ?=
 
-.PHONY: help dev down logs ps restart test lint format api-client e2e check migrate migration seed example-job stripe-sync stripe-listen email-preview shell psql clean
+.PHONY: help dev down logs ps restart test lint format api-client e2e check migrate migration seed example-job stripe-sync stripe-listen email-preview admin storage-setup eval shell psql clean
 
 help: ## Show all commands
 	@echo "make dev          Start everything (first run takes a few minutes)"
@@ -26,6 +26,9 @@ help: ## Show all commands
 	@echo "make stripe-sync  Create/update Stripe products + prices from plans.py (ARGS=--dry-run)"
 	@echo "make stripe-listen  Forward Stripe test webhooks to your app (Ctrl+C to stop)"
 	@echo "make email-preview  Send one of every email to Mailpit (http://localhost:8025)"
+	@echo "make admin email=you@example.com   Give a user the /admin pages (ARGS=--remove)"
+	@echo "make storage-setup  Create the file storage bucket + upload rules (production: once)"
+	@echo "make eval         Score the AI summary on its test set (ARGS=--live: real model)"
 	@echo "make shell        Open a shell in the backend container"
 	@echo "make psql         Open the Postgres console"
 	@echo "make clean        Stop everything and DELETE local data"
@@ -36,6 +39,7 @@ dev: ## Build and start all services in the background
 	@echo "App:      http://localhost:3000"
 	@echo "API docs: http://localhost:8000/api/docs"
 	@echo "Emails:   http://localhost:8025"
+	@echo "Files:    http://localhost:8333 (S3 storage, SeaweedFS)"
 	@echo "Logs:     make logs"
 
 down:
@@ -86,7 +90,7 @@ migration:
 	$(COMPOSE) exec backend alembic revision --autogenerate -m "$(name)"
 
 seed:
-	$(COMPOSE) exec backend python -m app.scripts.seed
+	$(COMPOSE) exec backend python -m app.scripts.seed $(ARGS)
 
 example-job:
 	$(COMPOSE) exec backend python -m app.scripts.run_example_job
@@ -99,6 +103,15 @@ stripe-listen:
 
 email-preview:
 	$(COMPOSE) exec backend python -m app.scripts.email_preview
+
+admin:
+	$(COMPOSE) exec backend python -m app.scripts.make_admin $(email) $(ARGS)
+
+storage-setup:
+	$(COMPOSE) exec backend python -m app.scripts.storage_setup
+
+eval:
+	$(COMPOSE) exec backend python -m app.llm.evals.run $(ARGS)
 
 shell:
 	$(COMPOSE) exec backend bash

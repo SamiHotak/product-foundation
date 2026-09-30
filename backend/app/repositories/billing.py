@@ -7,16 +7,74 @@ Stripe customer id, which we created for exactly one workspace.
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import Select, Update, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.dml import ReturningInsert
 
 from app.models.api_key import ApiKey
 from app.models.billing import StripeEvent, Subscription, UsageRecord
+from app.models.file import FileStatus, StoredFile
 from app.models.invite import Invite
 from app.models.organization import Membership, Role
 from app.models.user import User
+
+
+def usage_upsert(
+    organization_id: uuid.UUID, metric: str, period_start: date, amount: int, limit: int | None
+) -> ReturningInsert[tuple[int]]:
+    """ONE statement that adds `amount` only while the total stays within `limit`.
+
+    It returns the new total, or no row when the limit would be passed (nothing changes).
+    Safe with many requests at once: Postgres locks the counter row during the update.
+    """
+    stmt = insert(UsageRecord).values(
+        organization_id=organization_id, metric=metric, period_start=period_start, count=amount
+    )
+    where = (UsageRecord.count + stmt.excluded.count) <= limit if limit is not None else None
+    return stmt.on_conflict_do_update(
+        index_elements=[UsageRecord.organization_id, UsageRecord.metric, UsageRecord.period_start],
+        set_={"count": UsageRecord.count + stmt.excluded.count, "updated_at": func.now()},
+        where=where,
+    ).returning(UsageRecord.count)
+
+
+def usage_release(
+    organization_id: uuid.UUID, metric: str, period_start: date, amount: int
+) -> Update:
+    """Give back usage (never below 0)."""
+    return (
+        update(UsageRecord)
+        .where(
+            UsageRecord.organization_id == organization_id,
+            UsageRecord.metric == metric,
+            UsageRecord.period_start == period_start,
+        )
+        .values(count=func.greatest(UsageRecord.count - amount, 0))
+    )
+
+
+def usage_get(organization_id: uuid.UUID, metric: str, period_start: date) -> Select[tuple[int]]:
+    """Usage of one metric in one month."""
+    return select(UsageRecord.count).where(
+        UsageRecord.organization_id == organization_id,
+        UsageRecord.metric == metric,
+        UsageRecord.period_start == period_start,
+    )
+
+
+def subscription_of(organization_id: uuid.UUID) -> Select[tuple[Subscription]]:
+    """The workspace's billing row."""
+    return select(Subscription).where(Subscription.organization_id == organization_id)
+
+
+def stored_bytes(organization_id: uuid.UUID) -> Select[tuple[int]]:
+    """Bytes of all files that take space (uploads in progress count too)."""
+    return select(func.coalesce(func.sum(StoredFile.size_bytes), 0)).where(
+        StoredFile.organization_id == organization_id,
+        StoredFile.status != FileStatus.REJECTED,
+    )
 
 
 class BillingRepository:
@@ -31,7 +89,7 @@ class BillingRepository:
         self, organization_id: uuid.UUID, *, lock: bool = False
     ) -> Subscription | None:
         """The workspace's billing row, or None (= free, never checked out)."""
-        query = select(Subscription).where(Subscription.organization_id == organization_id)
+        query = subscription_of(organization_id)
         if lock:
             query = query.with_for_update()
         found: Subscription | None = await self._session.scalar(
@@ -134,53 +192,28 @@ class BillingRepository:
         """Add `amount` in ONE statement, only if the total stays within `limit`.
 
         Returns the new total, or None when the limit would be passed (nothing changes).
-        Safe with many requests at once: Postgres locks the counter row during the update.
         """
         if limit is not None and amount > limit:
             return None
-        stmt = insert(UsageRecord).values(
-            organization_id=organization_id,
-            metric=metric,
-            period_start=period_start,
-            count=amount,
+        total = await self._session.scalar(
+            usage_upsert(organization_id, metric, period_start, amount, limit)
         )
-        where = (UsageRecord.count + stmt.excluded.count) <= limit if limit is not None else None
-        upsert = stmt.on_conflict_do_update(
-            index_elements=[
-                UsageRecord.organization_id,
-                UsageRecord.metric,
-                UsageRecord.period_start,
-            ],
-            set_={"count": UsageRecord.count + stmt.excluded.count, "updated_at": func.now()},
-            where=where,
-        ).returning(UsageRecord.count)
-        total = await self._session.scalar(upsert)
         return int(total) if total is not None else None
 
     async def release_usage(
         self, organization_id: uuid.UUID, metric: str, period_start: date, amount: int
     ) -> None:
         """Give back usage that did not happen (e.g. the job could not be queued)."""
-        await self._session.execute(
-            update(UsageRecord)
-            .where(
-                UsageRecord.organization_id == organization_id,
-                UsageRecord.metric == metric,
-                UsageRecord.period_start == period_start,
-            )
-            .values(count=func.greatest(UsageRecord.count - amount, 0))
-        )
+        await self._session.execute(usage_release(organization_id, metric, period_start, amount))
 
     async def get_usage(self, organization_id: uuid.UUID, metric: str, period_start: date) -> int:
         """Usage of one metric in one month."""
-        value = await self._session.scalar(
-            select(UsageRecord.count).where(
-                UsageRecord.organization_id == organization_id,
-                UsageRecord.metric == metric,
-                UsageRecord.period_start == period_start,
-            )
-        )
+        value = await self._session.scalar(usage_get(organization_id, metric, period_start))
         return int(value or 0)
+
+    async def stored_bytes(self, organization_id: uuid.UUID) -> int:
+        """Bytes of the workspace's files (uploads in progress count too)."""
+        return int(await self._session.scalar(stored_bytes(organization_id)) or 0)
 
     # --- Stripe events --------------------------------------------------------------------
 
@@ -196,10 +229,42 @@ class BillingRepository:
 
 
 class SyncBillingRepository:
-    """Sync billing queries for workers (nightly jobs)."""
+    """Sync billing queries for workers (nightly jobs, the LLM gateway)."""
 
     def __init__(self, session: Session) -> None:
         self._session = session
+
+    def get_subscription(self, organization_id: uuid.UUID) -> Subscription | None:
+        """The workspace's billing row, or None."""
+        found: Subscription | None = self._session.scalar(subscription_of(organization_id))
+        return found
+
+    def add_usage(
+        self,
+        organization_id: uuid.UUID,
+        metric: str,
+        period_start: date,
+        amount: int,
+        *,
+        limit: int | None,
+    ) -> int | None:
+        """Same as the async version: the new total, or None when over the limit."""
+        if limit is not None and amount > limit:
+            return None
+        total = self._session.scalar(
+            usage_upsert(organization_id, metric, period_start, amount, limit)
+        )
+        return int(total) if total is not None else None
+
+    def release_usage(
+        self, organization_id: uuid.UUID, metric: str, period_start: date, amount: int
+    ) -> None:
+        """Give back usage."""
+        self._session.execute(usage_release(organization_id, metric, period_start, amount))
+
+    def get_usage(self, organization_id: uuid.UUID, metric: str, period_start: date) -> int:
+        """Usage of one metric in one month."""
+        return int(self._session.scalar(usage_get(organization_id, metric, period_start)) or 0)
 
     def customer_id(self, organization_id: uuid.UUID) -> str | None:
         """The workspace's Stripe customer, if it ever started a checkout."""

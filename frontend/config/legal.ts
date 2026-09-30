@@ -46,7 +46,7 @@ export type LegalConfig = {
 
 export const legal: LegalConfig = {
   reviewed: false,
-  updated: "2026-09-27",
+  updated: "2026-09-30",
   company: {
     name: "[Your name or company name]",
     representedBy: "",
@@ -66,8 +66,21 @@ export const legal: LegalConfig = {
   processors: [
     {
       name: "Hetzner Online GmbH",
-      purpose: "Servers, database and file storage",
+      purpose: "Servers, database, backups and file storage (Hetzner Object Storage)",
       location: "Germany",
+    },
+    {
+      name: "OpenAI Ireland Ltd. (OpenAI)",
+      purpose:
+        "AI features: the text you send to an AI feature is processed to create the answer (API data is not used for training; OpenAI may keep it up to 30 days for abuse monitoring)",
+      location: "[USA, or EU with OpenAI's EU data residency]",
+      transfer: "[EU-US Data Privacy Framework and/or Standard Contractual Clauses]",
+    },
+    {
+      name: "Langfuse GmbH",
+      purpose:
+        "Monitoring AI requests (costs, errors, quality); texts only if LLM_TRACE_CONTENT is on",
+      location: "[EU (Frankfurt) with Langfuse Cloud EU, or our own server]",
     },
     {
       name: "[Resend or Postmark]",

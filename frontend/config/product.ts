@@ -14,7 +14,7 @@
 import "@fontsource-variable/hanken-grotesk";
 
 import type { LucideIcon } from "lucide-react";
-import { LayoutDashboard, Settings } from "lucide-react";
+import { FolderOpen, LayoutDashboard, Settings, ShieldCheck } from "lucide-react";
 
 import type { Permission } from "@/lib/api";
 
@@ -26,6 +26,8 @@ export type NavItem = {
   needs?: Permission;
   /** Extra words that find this page in the command palette (Ctrl+K). */
   keywords?: string[];
+  /** Only for admins of the whole app (users with is_superuser, `make admin`). */
+  adminOnly?: boolean;
 };
 
 /** Step keys the backend knows (backend/app/services/onboarding.py). */
@@ -77,8 +79,24 @@ export const product: ProductConfig = {
   logo: null,
   accent: { light: "#244BA6", dark: "#86A4F4" },
   fonts: { sans: "Hanken Grotesk Variable" },
-  nav: [{ label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, keywords: ["home"] }],
+  nav: [
+    { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, keywords: ["home", "ai"] },
+    {
+      label: "Files",
+      href: "/files",
+      icon: FolderOpen,
+      needs: "files:read",
+      keywords: ["upload", "documents", "download"],
+    },
+  ],
   navFooter: [
+    {
+      label: "Admin",
+      href: "/admin",
+      icon: ShieldCheck,
+      adminOnly: true,
+      keywords: ["support", "users", "workspaces", "impersonate", "kill switch"],
+    },
     {
       label: "Settings",
       href: "/settings",

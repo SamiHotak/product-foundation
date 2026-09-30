@@ -24,6 +24,23 @@ for _name, _value in {
     "STRIPE_PREFIX": "foundation",
     "STRIPE_AUTOMATIC_TAX": "false",
     "EMAIL_PROVIDER": "smtp",
+    # Phase 4B: the dev compose turns on S3 (SeaweedFS), the pretend model and the demo;
+    # backend/.env may hold OpenAI or Langfuse keys. Tests use fakes instead.
+    "S3_ENDPOINT": "",
+    "S3_PUBLIC_URL": "",
+    "S3_ACCESS_KEY": "",
+    "S3_SECRET_KEY": "",
+    "CLAMAV_HOST": "",
+    "LLM_ENABLED": "true",
+    "LLM_DEV_FAKE": "false",
+    "LLM_MODELS": "{}",
+    "LLM_TRACE_CONTENT": "false",
+    "OPENAI_API_KEY": "",
+    "OPENAI_BASE_URL": "",
+    "LANGFUSE_PUBLIC_KEY": "",
+    "LANGFUSE_SECRET_KEY": "",
+    "DEMO_ENABLED": "false",
+    "DEMO_AI_PER_HOUR": "10",
 }.items():
     os.environ[_name] = _value
 RUN_INTEGRATION = os.getenv("RUN_INTEGRATION") == "1"

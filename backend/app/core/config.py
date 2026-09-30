@@ -125,6 +125,56 @@ class Settings(BaseSettings):
     # needed) and POST /api/billing/dev/set-plan. Refused in production.
     billing_dev_tools: bool = False
 
+    # File storage: any S3-compatible service. Locally SeaweedFS in Docker, in production
+    # Hetzner Object Storage. Empty S3_ENDPOINT = file uploads are switched off.
+    s3_endpoint: str = ""  # e.g. http://s3:8333 or https://fsn1.your-objectstorage.com
+    s3_region: str = "us-east-1"  # Hetzner: fsn1, nbg1 or hel1
+    s3_bucket: str = "foundation-files"
+    s3_access_key: str = ""
+    s3_secret_key: SecretStr | None = None
+    # The address BROWSERS use for uploads and downloads. Empty = the same as S3_ENDPOINT.
+    # Locally "/storage": the Next.js server forwards /storage/... to S3_ENDPOINT, so the
+    # browser never needs to reach the S3 container (see frontend/next.config.ts).
+    s3_public_url: str = ""
+    files_max_bytes: int = 25 * 1024 * 1024  # one file (25 MB)
+    files_upload_minutes: int = 15  # how long an upload link works
+    files_download_seconds: int = 300  # how long a download link works
+    # Virus scanning with ClamAV (clamd, TCP). Empty = no scan. See docs/FILES_AND_AI.md.
+    clamav_host: str = ""
+    clamav_port: int = 3310
+
+    # LLM gateway (app/llm/). One place for every AI call. See docs/FILES_AND_AI.md.
+    # Kill switch: LLM_ENABLED=false stops every AI call at once (admins also have a switch
+    # in the app that works without a restart).
+    llm_enabled: bool = True
+    openai_api_key: SecretStr | None = None
+    # e.g. https://eu.api.openai.com/v1 for EU data residency (needs an eligible project).
+    openai_base_url: str | None = None
+    # Local development and e2e tests only: a pretend model when there is no API key.
+    # It returns fixed answers and costs nothing. Refused in production.
+    llm_dev_fake: bool = False
+    # A different model for a task, e.g. LLM_MODELS='{"summarize": "gpt-6.1-sol"}'.
+    llm_models: dict[str, str] = Field(default_factory=dict)
+    # Also send prompts and answers to Langfuse. Off by default (privacy by default): then
+    # Langfuse only gets the task, model, tokens, cost, timing and error codes.
+    llm_trace_content: bool = False
+    # Langfuse (LLM traces and costs). Empty keys = no tracing.
+    langfuse_host: str = (
+        "https://cloud.langfuse.com"  # EU region; US: https://us.cloud.langfuse.com
+    )
+    langfuse_public_key: str = ""
+    langfuse_secret_key: SecretStr | None = None
+
+    # Demo mode: the "Try the demo" button signs visitors into a shared, read-mostly
+    # demo workspace (make seed creates it; a nightly task resets it).
+    demo_enabled: bool = False
+    demo_email: str = "demo@example.com"
+    # AI summaries per visitor (IP) and hour in the shared demo (it may only use the samples).
+    demo_ai_per_hour: int = Field(default=10, ge=1)
+
+    # Admins (users with is_superuser) can view the app as another user for support.
+    impersonation_minutes: int = 60
+
     @model_validator(mode="after")
     def _fill_defaults_and_check(self) -> "Settings":
         if self.celery_broker_url is None:
@@ -161,7 +211,40 @@ class Settings(BaseSettings):
             and self.secret_key.get_secret_value() == DEV_SECRET_KEY
         ):
             raise ValueError("SECRET_KEY must be set to a strong random value in production.")
+        self.s3_endpoint = self.s3_endpoint.strip().rstrip("/")
+        self.s3_public_url = self.s3_public_url.strip().rstrip("/")
+        if self.s3_endpoint:
+            if not self.s3_endpoint.startswith(("https://", "http://")):
+                raise ValueError("S3_ENDPOINT must start with https:// (or http:// locally).")
+            if not (self.s3_access_key and self.s3_secret_key):
+                raise ValueError("S3_ACCESS_KEY and S3_SECRET_KEY are needed with S3_ENDPOINT.")
+            if not re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", self.s3_bucket):
+                raise ValueError("S3_BUCKET: 3-63 characters, a-z, 0-9, dots and dashes.")
+        if self.s3_public_url and not self.s3_public_url.startswith(("https://", "http://", "/")):
+            raise ValueError("S3_PUBLIC_URL must be a full URL or a path like /storage.")
+        if not 1024 <= self.files_max_bytes <= 5 * 1024**3:
+            raise ValueError("FILES_MAX_BYTES must be between 1 KB and 5 GB.")
+        if self.is_production and self.llm_dev_fake:
+            raise ValueError("LLM_DEV_FAKE must be off in production.")
+        self.langfuse_host = self.langfuse_host.strip().rstrip("/")
+        if self.langfuse_public_key and not self.langfuse_secret_key:
+            raise ValueError("LANGFUSE_SECRET_KEY is needed with LANGFUSE_PUBLIC_KEY.")
         return self
+
+    @property
+    def files_enabled(self) -> bool:
+        """True when file storage is configured."""
+        return bool(self.s3_endpoint)
+
+    @property
+    def openai_enabled(self) -> bool:
+        """True when a real OpenAI key is configured."""
+        return bool(self.openai_api_key and self.openai_api_key.get_secret_value())
+
+    @property
+    def langfuse_enabled(self) -> bool:
+        """True when LLM traces are sent to Langfuse."""
+        return bool(self.langfuse_public_key and self.langfuse_secret_key)
 
     @property
     def google_enabled(self) -> bool:

@@ -22,7 +22,10 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     google_sub: Mapped[str | None] = mapped_column(String(255), unique=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Admin of the whole app (not of a workspace): sees /admin. Set with `make admin`.
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The shared "Try the demo" user: read-mostly, reset every night (app/services/demo.py).
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # GDPR: set when the user asks to delete the account; the nightly job deletes it
     # after this time. Clearing it cancels the deletion.

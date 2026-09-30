@@ -18,12 +18,15 @@ from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestContextMiddleware
 from app.db.session import get_async_engine
 from app.routers import (
+    admin,
+    ai,
     analytics,
     api_keys,
     audit,
     auth,
     billing,
     billing_dev,
+    files,
     health,
     invites,
     jobs,
@@ -98,6 +101,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api.include_router(audit.router)
     api.include_router(jobs.router)
     api.include_router(billing.router)
+    api.include_router(files.router)
+    api.include_router(ai.router)
+    api.include_router(admin.router)
     if settings.billing_dev_tools:  # pretend checkout; refused in production (config.py)
         api.include_router(billing_dev.router)
     api.include_router(analytics.router)

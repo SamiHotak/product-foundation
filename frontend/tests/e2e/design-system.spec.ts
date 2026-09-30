@@ -206,7 +206,8 @@ test("data table: pages, search, sort, clear", async ({ page }) => {
   await setPlan(page, "business"); // the free plan allows 1 API key
   for (let i = 1; i <= 12; i++) {
     const res = await page.request.post("/api/organizations/current/api-keys", {
-      data: { name: `Key ${String(i).padStart(2, "0")}`, scopes: ["jobs:read"] },
+      // "no07", not just "07": search matches every word, and a random key prefix can contain "07".
+      data: { name: `Key no${String(i).padStart(2, "0")}`, scopes: ["jobs:read"] },
     });
     expect(res.status()).toBe(201);
   }
@@ -216,7 +217,7 @@ test("data table: pages, search, sort, clear", async ({ page }) => {
   const rows = table.locator("tbody tr");
   await expect(rows).toHaveCount(10);
   await expect(page.getByText("1–10 of 12")).toBeVisible();
-  await expect(rows.first()).toContainText("Key 01");
+  await expect(rows.first()).toContainText("Key no01");
 
   // Next page.
   await page.getByRole("button", { name: "Next page" }).click();
@@ -229,10 +230,10 @@ test("data table: pages, search, sort, clear", async ({ page }) => {
   const nameHeader = table.getByRole("columnheader", { name: /Name/ });
   await nameHeader.getByRole("button").click();
   await expect(nameHeader).toHaveAttribute("aria-sort", "descending");
-  await expect(rows.first()).toContainText("Key 12");
+  await expect(rows.first()).toContainText("Key no12");
 
   // Search (goes back to page 1), then nothing found, then clear.
-  await page.getByRole("searchbox", { name: "Search keys" }).fill("key 07");
+  await page.getByRole("searchbox", { name: "Search keys" }).fill("key no07");
   await expect(rows).toHaveCount(1);
   await expect(page.getByText("1–1 of 1 (filtered from 12)")).toBeVisible();
   await page.getByRole("searchbox", { name: "Search keys" }).fill("nope");

@@ -31,8 +31,14 @@ class SessionService:
         organization_id: uuid.UUID | None,
         ip: str | None,
         user_agent: str | None,
+        lifetime: timedelta | None = None,
+        impersonator_id: uuid.UUID | None = None,
     ) -> tuple[str, UserSession]:
-        """Start a session. Returns (cookie token, session). Always a NEW token (no fixation)."""
+        """Start a session. Returns (cookie token, session). Always a NEW token (no fixation).
+
+        `impersonator_id`: an admin viewing the app as this user. Such a session ends after
+        `lifetime` and is never extended.
+        """
         token = new_token()
         now = utcnow()
         user_session = await self._repo.add(
@@ -40,10 +46,11 @@ class SessionService:
                 token_hash=hash_token(token),
                 user_id=user_id,
                 active_organization_id=organization_id,
-                expires_at=now + self._lifetime,
+                expires_at=now + (lifetime or self._lifetime),
                 last_seen_at=now,
                 ip_address=(ip or "")[:64] or None,
                 user_agent=(user_agent or "")[:300] or None,
+                impersonator_id=impersonator_id,
             )
         )
         return token, user_session
@@ -56,7 +63,8 @@ class SessionService:
         user_session = await self._repo.get_valid(hash_token(token), now)
         if user_session is not None and now - user_session.last_seen_at > TOUCH_EVERY:
             user_session.last_seen_at = now
-            user_session.expires_at = now + self._lifetime
+            if user_session.impersonator_id is None:  # admin views keep their fixed end
+                user_session.expires_at = now + self._lifetime
         return user_session
 
     async def commit(self) -> None:

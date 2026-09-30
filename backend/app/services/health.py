@@ -1,4 +1,4 @@
-"""Health checks for the database and Redis.
+"""Health checks for the database, Redis and (when configured) the file storage.
 
 Each checker is a small async callable, so tests can swap in fakes.
 """
@@ -79,9 +79,24 @@ class HealthService:
         )
 
 
+def make_storage_checker(settings: Settings) -> Checker:
+    """Return a checker that HEADs the bucket (runs in a thread: boto3 blocks)."""
+    from app.services.storage import storage_for
+
+    async def check_storage() -> None:
+        storage = storage_for(settings)
+        assert storage is not None
+        await asyncio.to_thread(storage.check)
+
+    return check_storage
+
+
 def build_health_service(settings: Settings) -> HealthService:
     """Wire the real checkers."""
-    return HealthService(
-        settings,
-        {"database": check_database, "redis": make_redis_checker(settings.redis_url)},
-    )
+    checkers: dict[str, Checker] = {
+        "database": check_database,
+        "redis": make_redis_checker(settings.redis_url),
+    }
+    if settings.files_enabled:
+        checkers["storage"] = make_storage_checker(settings)
+    return HealthService(settings, checkers)

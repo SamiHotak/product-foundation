@@ -7,7 +7,8 @@ Browser ──► Next.js (port 3000) ──/api/*──► FastAPI (port 8000) 
                                                 │
                                                 ├──► Redis ◄── Celery worker (background jobs)
                                                 │          ◄── Celery beat (scheduled jobs)
-                                                ├──► S3 storage (phase 4B; Hetzner Object Storage in prod)
+                                                ├──► S3 storage (SeaweedFS locally; Hetzner Object Storage in prod)
+                                                ├──► OpenAI (through the LLM gateway) ──► Langfuse traces
                                                 └──► Email provider (Mailpit locally)
 ```
 
@@ -275,6 +276,45 @@ workspace row first. `LimitReachedError` → 402 `limit_reached` with details (m
 limit, plan). Tests run with the real plans in `test_billing*.py` / `test_usage_limits.py`;
 other tests use `roomy_catalog()` (free plan without limits) so they test their own feature.
 
+## Files, LLM gateway, admin, demo (phase 4B)
+
+How to use and set up: [FILES_AND_AI.md](FILES_AND_AI.md).
+
+**New tables** (migration `0007`): `files` (per workspace: name, type, size, status
+uploading/scanning/ready/rejected, storage key), `llm_calls` (per AI call: workspace, user,
+task, model, tokens, cost in micro-USD, latency, outcome, trace id), `system_flags` (runtime
+switches, e.g. `ai_paused`), plus `sessions.impersonator_id` and `users.is_demo`.
+
+```
+routers/files.py     GET /files · POST /files/uploads · POST /files/{id}/complete
+                     POST /files/{id}/download · DELETE /files/{id}
+routers/ai.py        GET /ai/status · POST /ai/summaries (a background job)
+routers/admin.py     GET /admin/overview|organizations|users|subscriptions|usage|jobs/failed
+                     POST /admin/jobs/{id}/retry · PUT /admin/ai (kill switch)
+                     POST /admin/users/{id}/impersonate · POST /admin/impersonation/stop
+routers/auth.py      POST /auth/demo ("Try the demo", only with DEMO_ENABLED)
+services/storage.py  S3 (boto3) behind ObjectStorage (tests: FakeStorage)
+services/files.py    upload form → copy staged → check → ready/scanning; download; delete
+llm/gateway.py       LlmGateway.run(): kill switch → guardrails → consume → model (retries)
+                     → checks → llm_calls row → Langfuse trace (worker task)
+llm/tasks.py         what a task is (model, instructions, output model, limits, check, fake)
+core/restrictions.py allow lists for the demo user and for admins viewing as a user
+services/demo.py     seed + nightly reset of the demo workspace
+```
+
+**Storage keys:** browsers only get signed forms for `uploads/<org>/<file>`; the server
+copies to `orgs/<org>/files/<file>` BEFORE checking, so bytes sent later with the same form
+are never served. Deleting a workspace deletes both prefixes.
+
+**Limits:** `storage_mb` (sum of the workspace's file sizes, the row lock on the workspace
+stops two uploads from taking the last space) and `ai_requests_per_month` (counted by the
+gateway with `consume()`, given back if the model was never reached).
+
+**Restricted sessions** are checked centrally in `routers/deps.py` for every signed-in
+request, with ALLOW lists (a new endpoint is blocked for them until added on purpose). The
+demo may read + run harmless things; an admin "viewing as" may read + try features, never
+change members, settings, keys, billing or the account.
+
 ## Planned by phase
 
 | Phase | Adds |
@@ -285,5 +325,5 @@ other tests use `roomy_catalog()` (free plan without limits) so they test their 
 | 3A | design system (data table, forms, toasts, command palette), settings pages, onboarding, theming (done) |
 | 3B | marketing site, pricing from plans config, legal page templates, cookie-less analytics, SEO files (done) |
 | 4A | Stripe checkout, portal, webhooks, trial, plan limits + metering, email templates + providers (done) |
-| 4B | file storage, LLM gateway, admin pages, demo mode |
+| 4B | file storage, LLM gateway, admin pages, demo mode (done) |
 | 5 | production deployment on Hetzner, backups, monitoring |

@@ -7,6 +7,16 @@ import { useSession } from "@/components/session-provider";
 import { product, type NavItem } from "@/config/product";
 import { cn } from "@/lib/utils";
 
+/** Is this menu item for this person? (Hidden only: the API checks every request itself.) */
+export function canSee(
+  item: NavItem,
+  session: Pick<ReturnType<typeof useSession>, "can" | "user" | "impersonator">,
+): boolean {
+  if (item.needs && !session.can(item.needs)) return false;
+  if (item.adminOnly && !(session.user.is_superuser && !session.impersonator)) return false;
+  return true;
+}
+
 /** Is `href` the current page (or a page below it)? */
 export function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -23,11 +33,11 @@ export function NavLinks({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
-  const { can } = useSession();
+  const session = useSession();
   return (
     <nav aria-label={label} className="flex flex-col gap-0.5">
       {items
-        .filter((item) => !item.needs || can(item.needs))
+        .filter((item) => canSee(item, session))
         .map(({ label: text, href, icon: Icon }) => {
           const active = isActive(pathname, href);
           return (

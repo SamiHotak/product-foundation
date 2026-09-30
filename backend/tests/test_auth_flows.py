@@ -365,7 +365,7 @@ async def test_google_takeover_of_unverified_account_removes_attacker_password(
 async def test_providers_endpoint(world: World) -> None:
     async with world.client() as c:
         res = await c.get("/api/auth/providers")
-    assert res.json() == {"password": True, "google": False}  # no Google keys in tests
+    assert res.json() == {"password": True, "google": False, "demo": False}  # no keys in tests
 
 
 # --- workspaces ---------------------------------------------------------------------------

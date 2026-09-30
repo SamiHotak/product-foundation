@@ -13,3 +13,5 @@ argon2-cffi==25.1.0  # password hashing (Argon2id)
 httpx==0.28.1  # outgoing HTTP (Google sign-in, Stripe, email APIs)
 stripe==15.6.1  # payments (API version pinned by the SDK)
 email-validator==2.3.0  # EmailStr validation
+boto3==1.43.103  # S3-compatible file storage (SeaweedFS locally, Hetzner Object Storage)
+openai==3.19.2  # the LLM gateway's OpenAI provider (Responses API + Structured Outputs)

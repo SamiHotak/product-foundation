@@ -60,6 +60,22 @@ export default function DpaPage() {
         <li>Role-based access inside each workspace; every workspace&apos;s data is kept apart</li>
         <li>Brute-force protection and rate limits on sign-in and the API</li>
         <li>Audit log of security-relevant actions</li>
+        <li>
+          Uploaded files: stored per workspace in object storage in Germany, only reachable with
+          short-lived signed links (15 minutes to upload, 5 minutes to download), type checked from
+          the file content, always downloaded as an attachment (never run in the browser)
+          <Value>[, virus scan with ClamAV]</Value>
+        </li>
+        <li>
+          AI features: the customer&apos;s content is sent to the model as data (never as
+          instructions), with size limits, structured answers and a switch that stops all AI
+          requests at once; per-plan limits on the number of AI requests
+        </li>
+        <li>
+          Support access (&quot;view as&quot;) only for named app admins, limited to 1 hour,
+          read-only (no changes to settings, members, passwords, billing, API keys; no data
+          exports), and recorded in the customer&apos;s audit log
+        </li>
         {/* Phase 5 builds these two. Keep the brackets until they are really in place. */}
         <li>
           <Value>[Daily database backups, restore tested]</Value>

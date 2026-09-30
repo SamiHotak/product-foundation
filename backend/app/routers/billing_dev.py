@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.core.errors import AppError
 from app.core.permissions import Permission
 from app.core.security import unsign_data
-from app.routers.deps import AppSettings, Billing, Catalog, require
+from app.routers.deps import AppSettings, Billing, Catalog, CurrentUser, Db, require
 from app.schemas.billing import DevSetPlan
 from app.services.organizations import OrgContext
 
@@ -177,4 +177,15 @@ async def dev_portal_submit(
 async def dev_set_plan(data: DevSetPlan, ctx: Owner, billing: Billing) -> Response:
     """Put the active workspace on a plan without paying (e2e tests, trying limits)."""
     await billing.dev_set_plan(ctx, data.plan_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/make-admin", status_code=status.HTTP_204_NO_CONTENT)
+async def dev_make_admin(current: CurrentUser, db: Db) -> Response:
+    """Make the signed-in user an app admin (e2e tests of /admin in Docker, where
+    `make admin` can't run). Like everything here: local development only."""
+    if current.user.is_demo:
+        raise AppError("The demo user can't be an admin.")
+    current.user.is_superuser = True
+    await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

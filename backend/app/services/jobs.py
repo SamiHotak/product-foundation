@@ -9,7 +9,7 @@ from app.core.logging import get_logger
 from app.models.job import Job
 from app.repositories.jobs import JobStore
 from app.schemas.jobs import ExampleJobCreate
-from app.services.usage import Metric
+from app.services.usage import MeteredMetric
 from app.workers.registry import JOB_TASKS, JOB_USAGE_METRIC
 
 logger = get_logger(__name__)
@@ -22,11 +22,15 @@ QUEUE_DOWN_ERROR = "Could not queue the job because the job queue was not reacha
 class UsageMeter(Protocol):
     """Counts metered usage (app.services.usage.UsageService). Raises when the plan is full."""
 
-    async def consume(self, organization_id: uuid.UUID, metric: Metric, amount: int = 1) -> None:
+    async def consume(
+        self, organization_id: uuid.UUID, metric: MeteredMetric, amount: int = 1
+    ) -> None:
         """Count, or raise LimitReachedError."""
         ...
 
-    async def release(self, organization_id: uuid.UUID, metric: Metric, amount: int = 1) -> None:
+    async def release(
+        self, organization_id: uuid.UUID, metric: MeteredMetric, amount: int = 1
+    ) -> None:
         """Give back."""
         ...
 
@@ -56,7 +60,7 @@ class JobService:
         """
         if kind not in JOB_TASKS:
             raise ValueError(f"Unknown job kind: {kind!r}. Register it in app/workers/registry.py")
-        metric = cast(Metric | None, JOB_USAGE_METRIC.get(kind))
+        metric = cast(MeteredMetric | None, JOB_USAGE_METRIC.get(kind))
         if metric and self._meter:
             # Counted in the same transaction as the job row (raises when the plan is full).
             await self._meter.consume(organization_id, metric)

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { SummaryPanel } from "@/components/ai/summary-panel";
 import { JobsPanel } from "@/components/jobs/jobs-panel";
 import { OnboardingChecklist } from "@/components/onboarding/onboarding-checklist";
 import { PageHeader } from "@/components/page-header";
@@ -15,11 +16,12 @@ export default async function DashboardPage() {
     <>
       <PageHeader
         title="Dashboard"
-        description="Each product adds its own overview here. For now it shows whether every service is running, and lets you try a background job."
+        description="Each product adds its own overview here. For now it shows whether every service is running, and lets you try a background job and the AI."
       />
       <div className="space-y-12">
         <OnboardingChecklist initial={onboarding} />
         <SystemStatus />
+        <SummaryPanel />
         <JobsPanel />
       </div>
     </>

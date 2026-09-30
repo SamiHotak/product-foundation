@@ -57,6 +57,10 @@ export default function PrivacyPage() {
           <code>session</code>: keeps you signed in. Up to 30 days.
         </li>
         <li>
+          <code>session_admin</code>: only for our support staff while they view the app as a
+          customer (keeps their own sign-in). At most 1 hour.
+        </li>
+        <li>
           <code>theme</code>: remembers light or dark mode, if you pick one. 1 year.
         </li>
         <li>
@@ -90,6 +94,42 @@ export default function PrivacyPage() {
         limits the workspace used this month (Art. 6 (1) (b) GDPR). The workspace owner&apos;s name
         and email are sent to Stripe for invoices. Invoices are kept as long as tax and commercial
         law require (currently up to 10 years; Art. 6 (1) (c) GDPR).
+      </p>
+
+      <h3>Files</h3>
+      <p>
+        Files you upload are stored for your workspace in object storage in Germany (Hetzner), sent
+        over encrypted connections only. We store the file, its name, size and type, who uploaded it
+        and when. Everyone in the workspace can see and download them. Files are checked when they
+        arrive (that they really are the type their name says<Value>[, and for viruses]</Value>).
+        They are deleted when someone deletes them, or with the workspace (Art. 6 (1) (b) GDPR).
+      </p>
+
+      <h3>AI features</h3>
+      <p>
+        When you use an AI feature, the text you give it is sent to OpenAI to create the answer. We
+        send it with the instruction not to store it (OpenAI may keep API data for up to 30 days to
+        detect abuse) and OpenAI does not use API data to train its models. We store for each
+        request: the workspace, who asked, the model, the number of tokens, the cost and whether it
+        worked, so we can apply plan limits and bill correctly (Art. 6 (1) (b) GDPR). To find errors
+        and improve quality, we record AI requests in Langfuse
+        <Value>[including the text and the answer | without the text and the answer]</Value>; these
+        records are deleted after <Value>[30]</Value> days (Art. 6 (1) (f) GDPR). Don&apos;t put
+        special categories of personal data (e.g. health data) into AI features.
+      </p>
+
+      <h3>Support access</h3>
+      <p>
+        To help you, our support staff can view the app as you for a limited time (at most one
+        hour). They can look, but not change your settings, team, password, billing or API keys, and
+        not export your data. Every such view is recorded in the audit log of your workspace, so you
+        can see it (Art. 6 (1) (b) and (f) GDPR).
+      </p>
+
+      <h3>Demo</h3>
+      <p>
+        The &quot;Try the demo&quot; button opens a shared workspace with invented sample data. It
+        sets only the <code>session</code> cookie and is reset every night.
       </p>
 
       <h2>3. Service providers</h2>

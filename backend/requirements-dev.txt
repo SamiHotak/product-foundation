@@ -5,3 +5,4 @@ pytest-asyncio==1.4.0
 pytest-cov==7.1.0
 ruff==0.16.8
 mypy==2.3.1
+moto[s3,server]==5.2.3  # a real S3 API in tests (storage service against boto3)

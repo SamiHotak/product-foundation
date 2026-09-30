@@ -286,3 +286,175 @@ class FakeGateway:
         )
         self.subscriptions[sub_id] = snap
         return snap
+
+
+# --- phase 4B: file storage, virus scanner, LLM provider, traces --------------------------
+
+
+class FakeStorage:
+    """Implements app.services.storage.ObjectStorage in memory.
+
+    `presigned_post` remembers the rules; tests "upload" with `upload()` (which applies
+    the same size / content-type rules the real storage checks) or `put()`.
+    """
+
+    def __init__(self) -> None:
+        from app.services.storage import StorageError
+
+        self.objects: dict[str, tuple[bytes, str]] = {}
+        self.changed: dict[str, Any] = {}  # key -> when it was last written
+        self.posts: dict[str, dict[str, Any]] = {}
+        self.fail_with: type[Exception] | None = None
+        self._error = StorageError
+
+    def _maybe_fail(self) -> None:
+        if self.fail_with is not None:
+            raise self.fail_with("storage down")
+
+    def presigned_post(
+        self, key: str, *, max_bytes: int, content_type: str, expires_seconds: int
+    ) -> Any:
+        from app.services.storage import PresignedPost
+
+        self._maybe_fail()
+        self.posts[key] = {"max_bytes": max_bytes, "content_type": content_type}
+        return PresignedPost(
+            url="http://storage.test/bucket",
+            fields={
+                "key": key,
+                "Content-Type": content_type,
+                "policy": "p",
+                "x-amz-signature": "s",
+            },
+        )
+
+    def upload(self, key: str, data: bytes) -> bool:
+        """Like the browser's POST: refused (False) when the storage's rules say no."""
+        rule = self.posts.get(key)
+        if rule is None or not 1 <= len(data) <= rule["max_bytes"]:
+            return False
+        self._write(key, data, rule["content_type"])
+        return True
+
+    def _write(self, key: str, data: bytes, content_type: str) -> None:
+        from datetime import UTC, datetime
+
+        self.objects[key] = (data, content_type)
+        self.changed[key] = datetime.now(UTC)
+
+    def presigned_get(
+        self, key: str, *, filename: str, content_type: str, expires_seconds: int
+    ) -> str:
+        self._maybe_fail()
+        return f"http://storage.test/bucket/{key}?download={filename}&expires={expires_seconds}"
+
+    def head(self, key: str) -> Any:
+        from app.services.storage import ObjectInfo
+
+        self._maybe_fail()
+        found = self.objects.get(key)
+        return None if found is None else ObjectInfo(size=len(found[0]), content_type=found[1])
+
+    def read_start(self, key: str, length: int) -> bytes:
+        self._maybe_fail()
+        return self.objects[key][0][:length]
+
+    def iter_chunks(self, key: str, chunk_size: int = 1024 * 1024) -> Any:
+        self._maybe_fail()
+        data = self.objects[key][0]
+        for start in range(0, len(data), chunk_size):
+            yield data[start : start + chunk_size]
+
+    def put(self, key: str, data: bytes, content_type: str) -> None:
+        self._maybe_fail()
+        self._write(key, data, content_type)
+
+    def copy(self, source: str, target: str, content_type: str) -> None:
+        self._maybe_fail()
+        self._write(target, self.objects[source][0], content_type)
+
+    def delete_older_than(self, prefix: str, before: Any) -> int:
+        self._maybe_fail()
+        keys = [k for k in self.objects if k.startswith(prefix) and self.changed[k] < before]
+        for key in keys:
+            self.delete(key)
+        return len(keys)
+
+    def delete(self, key: str) -> None:
+        self._maybe_fail()
+        self.objects.pop(key, None)
+        self.changed.pop(key, None)
+
+    def delete_prefix(self, prefix: str) -> int:
+        self._maybe_fail()
+        keys = [k for k in self.objects if k.startswith(prefix)]
+        for key in keys:
+            del self.objects[key]
+            self.changed.pop(key, None)
+        return len(keys)
+
+    def check(self) -> None:
+        self._maybe_fail()
+
+
+class FakeScanner:
+    """A virus scanner: files containing b"EICAR" are infected."""
+
+    def __init__(self) -> None:
+        self.unavailable = False
+        self.scanned = 0
+
+    def scan(self, chunks: Any) -> Any:
+        from app.services.virus_scan import ScannerUnavailableError, ScanResult
+
+        if self.unavailable:
+            raise ScannerUnavailableError("clamd down")
+        data = b"".join(chunks)
+        self.scanned += 1
+        if b"EICAR" in data:
+            return ScanResult(clean=False, signature="Eicar-Test-Signature")
+        return ScanResult(clean=True)
+
+
+class ScriptedProvider:
+    """An LLM provider that plays back a script: each item is a ProviderResult-like
+    output (a Pydantic model) or a ProviderError to raise. Empty script = the task's fake."""
+
+    name = "openai"
+
+    def __init__(self, *script: Any, model: str = "gpt-6-luna-2026-08-01") -> None:
+        self.script = list(script)
+        self.model = model
+        self.calls: list[tuple[str, str, str]] = []
+        self.models: list[str] = []  # the model each call asked for
+
+    def complete(self, task: Any, instructions: str, user_input: str) -> Any:
+        from app.llm.providers import ProviderResult
+
+        self.calls.append((task.name, instructions, user_input))
+        self.models.append(task.model)
+        item = self.script.pop(0) if self.script else None
+        if isinstance(item, Exception):
+            raise item
+        if item is None:
+            text = user_input.removeprefix("<user_content>\n").removesuffix("\n</user_content>")
+            item = task.fake(text)
+        return ProviderResult(
+            output=item,
+            output_json=item.model_dump_json(),
+            model=self.model,
+            input_tokens=1000,
+            cached_input_tokens=200,
+            output_tokens=100,
+            response_id="resp_test",
+        )
+
+
+class ListTracer:
+    """Collects traces instead of sending them."""
+
+    def __init__(self) -> None:
+        self.events: list[Any] = []
+
+    def record(self, event: Any) -> None:
+        self.events.append(event)

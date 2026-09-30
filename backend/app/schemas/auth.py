@@ -68,6 +68,7 @@ class AuthProviders(BaseModel):
 
     password: bool = True
     google: bool
+    demo: bool = Field(default=False, description='The "Try the demo" button is available.')
 
 
 class UserRead(BaseModel):
@@ -83,6 +84,16 @@ class UserRead(BaseModel):
     deletion_scheduled_at: datetime | None = Field(
         default=None, description="Set when the account will be deleted (can be cancelled)."
     )
+    is_superuser: bool = Field(default=False, description="An admin of the whole app (/admin).")
+    is_demo: bool = Field(default=False, description='The shared "Try the demo" user.')
+
+
+class ImpersonatorRead(BaseModel):
+    """The admin who is viewing the app as this user (support)."""
+
+    name: str
+    email: str
+    ends_at: datetime
 
 
 class OrganizationRead(BaseModel):
@@ -104,6 +115,9 @@ class MeResponse(BaseModel):
     active_organization_id: uuid.UUID
     permissions: list[Permission] = Field(
         description="What you may do in the active workspace (the UI hides everything else)."
+    )
+    impersonator: ImpersonatorRead | None = Field(
+        default=None, description="Set while an admin views the app as you."
     )
 
 

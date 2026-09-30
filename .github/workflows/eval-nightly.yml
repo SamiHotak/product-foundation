@@ -1,0 +1,49 @@
+# Nightly AI evaluation with the REAL model (10 small examples incl. prompt-injection
+# attempts; costs well under 1 cent a night with the default model).
+#
+# Catches quality drops you can't see in normal CI (which uses the pretend model): a new
+# model snapshot, a changed prompt, a provider problem. Fails below 80 % of the checks.
+#
+# Setup (once): GitHub -> repo -> Settings -> Secrets and variables -> Actions ->
+#   New repository secret: OPENAI_API_KEY (use a key with a low monthly budget limit).
+# Without the secret the job only prints a note and passes.
+# Run it by hand: Actions -> "AI eval (nightly)" -> Run workflow.
+
+name: AI eval (nightly)
+
+on:
+  schedule:
+    - cron: "23 2 * * *" # every night at 02:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    name: Summary eval (real model)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      ENVIRONMENT: test
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Evaluate
+        run: |
+          set -o pipefail
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::notice::No OPENAI_API_KEY secret: nightly AI eval skipped."
+            exit 0
+          fi
+          python -m app.llm.evals.run --live --min-score 0.8 | tee -a "$GITHUB_STEP_SUMMARY"

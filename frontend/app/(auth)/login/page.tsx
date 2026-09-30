@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { AuthHeader } from "@/components/auth/auth-header";
+import { DemoButton } from "@/components/auth/demo-button";
 import { GoogleButton } from "@/components/auth/google-button";
 import { LoginForm } from "@/components/auth/login-form";
 import { getMe, getProviders } from "@/lib/api/server";
@@ -37,6 +38,7 @@ export default async function LoginPage({
       <Suspense>
         <LoginForm />
       </Suspense>
+      {providers.demo && <DemoButton />}
     </>
   );
 }
