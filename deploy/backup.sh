@@ -40,7 +40,9 @@ name="db-$(date -u +%Y-%m-%dT%H%MZ)-${label}.dump.enc"
 store() { docker compose run --rm -T --no-deps -e BACKUP_S3_ENDPOINT -e BACKUP_S3_REGION -e BACKUP_S3_BUCKET -e BACKUP_S3_ACCESS_KEY -e BACKUP_S3_SECRET_KEY backend python -m app.scripts.backup_store "$@"; }
 
 ping_health() { # $1 = "" (ok) or "/fail"
-  [ -n "$HEALTHCHECK_URL" ] && curl -fsS -m 10 --retry 3 -o /dev/null "${HEALTHCHECK_URL}$1" || true
+  if [ -n "$HEALTHCHECK_URL" ]; then
+    curl -fsS -m 10 --retry 3 -o /dev/null "${HEALTHCHECK_URL}$1" || true
+  fi
 }
 
 fail() {

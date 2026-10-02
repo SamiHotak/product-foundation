@@ -30,7 +30,9 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 dc() { docker compose "$@"; }
 
-read_tag() { [ -s "$1" ] && tr -d '[:space:]' <"$1" || true; }
+read_tag() {
+  if [ -s "$1" ]; then tr -d '[:space:]' <"$1"; fi
+}
 
 env_value() { # read one value from .env without running it as a script
   grep -E "^$1=" .env | tail -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' || true
