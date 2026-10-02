@@ -5,7 +5,7 @@ COMPOSE = docker compose -f deploy/docker-compose.dev.yml
 s ?=
 ARGS ?=
 
-.PHONY: help dev down logs ps restart test lint format api-client e2e check migrate migration seed example-job stripe-sync stripe-listen email-preview admin storage-setup eval shell psql clean
+.PHONY: help dev down logs ps restart test lint format api-client e2e check migrate migration seed example-job stripe-sync stripe-listen email-preview admin storage-setup eval loadtest-users loadtest loadtest-clean new-product shell psql clean
 
 help: ## Show all commands
 	@echo "make dev          Start everything (first run takes a few minutes)"
@@ -29,6 +29,10 @@ help: ## Show all commands
 	@echo "make admin email=you@example.com   Give a user the /admin pages (ARGS=--remove)"
 	@echo "make storage-setup  Create the file storage bucket + upload rules (production: once)"
 	@echo "make eval         Score the AI summary on its test set (ARGS=--live: real model)"
+	@echo "make loadtest-users  Make 50 test users + sessions for the load test (docs/LOADTEST.md)"
+	@echo "make loadtest     Run the k6 load test against your local app (needs k6 installed)"
+	@echo "make loadtest-clean  Delete the load test users again"
+	@echo "make new-product  Start a new product from this template (docs/NEW_PRODUCT.md)"
 	@echo "make shell        Open a shell in the backend container"
 	@echo "make psql         Open the Postgres console"
 	@echo "make clean        Stop everything and DELETE local data"
@@ -112,6 +116,20 @@ storage-setup:
 
 eval:
 	$(COMPOSE) exec backend python -m app.llm.evals.run $(ARGS)
+
+loadtest-users:
+	$(COMPOSE) exec -T backend python -m app.scripts.loadtest_users --users 50 --out /tmp/loadtest-users.json
+	$(COMPOSE) cp backend:/tmp/loadtest-users.json loadtest/users.json
+
+loadtest:
+	k6 run $(ARGS) loadtest/k6/api.js
+
+loadtest-clean:
+	$(COMPOSE) exec -T backend python -m app.scripts.loadtest_users --cleanup
+	-@rm -f loadtest/users.json
+
+new-product:
+	@echo "Run:  python scripts/new_product.py --help   (see docs/NEW_PRODUCT.md)"
 
 shell:
 	$(COMPOSE) exec backend bash

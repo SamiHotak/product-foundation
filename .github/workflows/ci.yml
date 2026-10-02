@@ -139,12 +139,14 @@ jobs:
         run: shellcheck -x deploy/*.sh deploy/tests/*.sh deploy/tests/fake-docker
       - name: Deploy script logic (pretend Docker)
         run: bash deploy/tests/deploy-script-test.sh
+      - name: Server scripts logic (pretend sshd, ufw, fail2ban)
+        run: bash deploy/tests/server-scripts-test.sh
       - name: Production compose file is valid
         working-directory: deploy
         run: |
           mkdir -p /tmp/server
           cp docker-compose.yml Caddyfile /tmp/server/
-          sed -e 's/^SECRET_KEY=$/SECRET_KEY=ci/' -e 's/^POSTGRES_PASSWORD=$/POSTGRES_PASSWORD=ci/' \
+          sed -e 's/^SECRET_KEY=$/SECRET_KEY=ci/' -e 's/^POSTGRES_APP_PASSWORD=$/POSTGRES_APP_PASSWORD=ci/' \
               -e 's/^REDIS_PASSWORD=$/REDIS_PASSWORD=ci/' .env.example >/tmp/server/.env
           cd /tmp/server
           IMAGE_TAG=ci docker compose config -q

@@ -36,3 +36,11 @@ frontend/CLAUDE.md
 
 # Redis data file (if redis-server runs in the project folder)
 dump.rdb
+
+# Load test sessions (live cookies!)
+loadtest/users.json
+loadtest-users.json
+
+# Server secret files, in case a local copy of /opt/app is ever inside the repo
+deploy/secrets/
+secrets/

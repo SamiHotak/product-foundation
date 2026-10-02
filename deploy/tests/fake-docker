@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # A pretend `docker` for deploy-script-test.sh. It records every call in $FAKE_DIR/calls.log
 # and keeps a tiny pretend list of containers per service in $FAKE_DIR/ids-<service>.
-# Failure switches (environment): FAIL_MIGRATE=1, FAIL_BACKUP=1, FAIL_CADDY=1, FAKE_DB_REV=<revision the database is at>, and FAIL_SCALE=<service> with
+# Failure switches (environment): FAIL_MIGRATE=1, FAIL_BACKUP=1, FAIL_CADDY=1, FAIL_ROLES=1 (the database-user
+# setup fails), FAKE_OLD_IMAGE=1 (the image has no db_roles command: it is older than phase 5B),
+# FAKE_DB_REV=<revision the database is at>, and FAIL_SCALE=<service> with
 # FAIL_TAG=<tag>: that service never gets healthy on that version (other versions are fine).
+# It writes ADMIN_URL_OK / ADMIN_URL_MISSING when a container is started WITH the admin connection
+# (never the password itself) and ADMIN_URL_LEAK if any other container would have received it.
 set -u
 : "${FAKE_DIR:?}"
 echo "[${IMAGE_TAG:-none}] docker $*" >>"$FAKE_DIR/calls.log"
@@ -14,9 +18,20 @@ if [ "${1:-}" = "compose" ]; then
   # drop global flags we never use, then read the sub command
   sub=${1:-}
   shift || true
+  if [ -n "${MIGRATION_DATABASE_URL:-}" ] && [[ "$*" != *"-e MIGRATION_DATABASE_URL"* ]]; then
+    echo "ADMIN_URL_LEAK" >>"$FAKE_DIR/calls.log"
+  fi
   case "$sub" in
     config | pull) exit 0 ;;
     run)
+      [[ "$*" == *"find_spec"* ]] && [ "${FAKE_OLD_IMAGE:-0}" = "1" ] && exit 3
+      if [[ "$*" == *"-e MIGRATION_DATABASE_URL"* ]]; then
+        case "${MIGRATION_DATABASE_URL:-}" in
+          postgresql+psycopg://app:*@postgres:5432/app) echo "ADMIN_URL_OK" >>"$FAKE_DIR/calls.log" ;;
+          *) echo "ADMIN_URL_MISSING" >>"$FAKE_DIR/calls.log"; exit 1 ;;
+        esac
+      fi
+      [[ "$*" == *"python -m app.scripts.db_roles"* ]] && [ "${FAIL_ROLES:-0}" = "1" ] && exit 1
       [[ "$*" == *"alembic upgrade"* ]] && [ "${FAIL_MIGRATE:-0}" = "1" ] && exit 1
       [[ "$*" == *"alembic history"* ]] && echo "base -> rev0001 (head), first migration"
       [[ "$*" == *"caddy validate"* ]] && [ "${FAIL_CADDY:-0}" = "1" ] && exit 1

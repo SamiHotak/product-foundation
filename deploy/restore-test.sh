@@ -46,7 +46,7 @@ fi
 name=${1:-$(store latest)}
 echo "Restoring $name into the scratch database restore_test ..."
 
-psql_admin -q -c "DROP DATABASE IF EXISTS restore_test" -c "CREATE DATABASE restore_test"
+psql_admin -q -c "DROP DATABASE IF EXISTS restore_test" -c "CREATE DATABASE restore_test" -c "REVOKE ALL ON DATABASE restore_test FROM PUBLIC"
 cleanup() { psql_admin -q -c "DROP DATABASE IF EXISTS restore_test" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 

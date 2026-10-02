@@ -41,6 +41,8 @@ for _name, _value in {
     "LANGFUSE_SECRET_KEY": "",
     "DEMO_ENABLED": "false",
     "DEMO_AI_PER_HOUR": "10",
+    # Phase 5B: tests always migrate with DATABASE_URL (production sets an admin URL here).
+    "MIGRATION_DATABASE_URL": "",
     # Phase 5A: Sentry stays off in tests (a test that needs it passes settings itself).
     "SENTRY_DSN": "",
     "SENTRY_RELEASE": "",

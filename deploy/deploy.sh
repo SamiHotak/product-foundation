@@ -7,6 +7,7 @@
 #   ./deploy.sh status               what runs now
 #   ./deploy.sh logs backend         follow logs of one service (Ctrl+C to stop)
 #   ./deploy.sh reload-caddy         apply a changed Caddyfile
+#   ./deploy.sh db-roles             (re)create the limited database user the app runs as
 #   ./deploy.sh compose ps           any `docker compose` command with the right settings
 #
 # How a deploy stays (almost) invisible to visitors:
@@ -23,6 +24,7 @@ cd "$(dirname "$0")"
 
 CURRENT_FILE=.deployed_tag
 PREVIOUS_FILE=.previous_tag
+ADMIN_PASSWORD_FILE=secrets/postgres_admin_password
 
 log() { printf '\n==> %s\n' "$*"; }
 warn() { printf 'WARNING: %s\n' "$*" >&2; }
@@ -39,6 +41,57 @@ env_value() { # read one value from .env without running it as a script
 }
 
 valid_tag() { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; }
+
+# --- the two database users (docs/SECURITY.md) ----------------------------------------------
+# The app runs as the limited user "app_rt". Only this script uses the Postgres ADMIN user
+# ("app") to change tables (migrations). The admin password is the FILE $ADMIN_PASSWORD_FILE:
+# only the postgres container and this script read it, never an app container.
+
+admin_database_url() {
+  local pw
+  [ -s "$ADMIN_PASSWORD_FILE" ] ||
+    die "$ADMIN_PASSWORD_FILE is missing or empty (deploy/server-setup.md, step 10)."
+  pw=$(tr -d '[:space:]' <"$ADMIN_PASSWORD_FILE")
+  [[ "$pw" =~ ^[A-Za-z0-9]{32,}$ ]] ||
+    die "$ADMIN_PASSWORD_FILE must hold 32 or more letters and digits (make it with: openssl rand -hex 32)."
+  printf 'postgresql+psycopg://app:%s@postgres:5432/app' "$pw"
+}
+
+# A one-off backend container WITH the admin connection (migrations only). The URL goes in through
+# the environment (-e NAME, no value), so the password is never part of a command line.
+admin_run() {
+  local url
+  url=$(admin_database_url) || return 1
+  (
+    export MIGRATION_DATABASE_URL=$url
+    dc run --rm -T --no-deps -e MIGRATION_DATABASE_URL backend "$@"
+  )
+}
+
+# Create/update the limited database user. Runs before every migration (safe to repeat). An image
+# from before phase 5B does not have the command (a rollback by tag): then it is skipped.
+ensure_db_roles() {
+  local rc=0
+  dc run --rm -T --no-deps backend python -c \
+    "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('app.scripts.db_roles') else 3)" \
+    >/dev/null 2>&1 || rc=$?
+  if [ "$rc" = 3 ]; then
+    warn "$IMAGE_TAG has no database-user setup (older than phase 5B). Skipping it."
+    return 0
+  fi
+  [ "$rc" = 0 ] || return 1
+  admin_run python -m app.scripts.db_roles
+}
+
+# The admin password must never reach an app container: they all read .env.
+check_env_layout() {
+  local name
+  for name in POSTGRES_PASSWORD MIGRATION_DATABASE_URL; do
+    # compose's .env parser also accepts "export NAME=" and "NAME =", so look for those too
+    ! grep -Eq "^[[:space:]]*(export[[:space:]]+)?${name}[[:space:]]*=" .env ||
+      die "$name must not be in /opt/app/.env (every app container reads that file). Delete the line. The admin password is the file $ADMIN_PASSWORD_FILE (deploy/server-setup.md, step 10)."
+  done
+}
 
 # --- health checks ------------------------------------------------------------------------
 
@@ -132,7 +185,7 @@ run_migrations() {
     warn "The database (revision $db_rev) is newer than $IMAGE_TAG. Skipping migrations (this looks like a rollback)."
     return 0
   fi
-  dc run --rm -T --no-deps backend alembic upgrade head
+  admin_run alembic upgrade head
 }
 
 # --- commands -----------------------------------------------------------------------------
@@ -142,6 +195,8 @@ cmd_deploy() {
   [ -n "$tag" ] || die "Usage: ./deploy.sh deploy <image tag>, e.g. sha-abc1234"
   valid_tag "$tag" || die "Strange image tag: $tag"
   [ -f .env ] || die "/opt/app/.env is missing. See deploy/server-setup.md."
+  check_env_layout
+  admin_database_url >/dev/null # fail early (before anything is pulled or changed) if the file is wrong
   export IMAGE_TAG=$tag
   previous=$(read_tag "$CURRENT_FILE")
 
@@ -165,9 +220,18 @@ cmd_deploy() {
     ./backup.sh predeploy || die "The backup failed, so nothing was changed. Fix the backup first (or SKIP_BACKUP=1 at your own risk)."
   fi
 
+  log "Setting up the limited database user (no change if it exists)"
+  ensure_db_roles ||
+    die "Database user setup failed. Nothing was switched: the old version still runs."
+
   log "Running database migrations (the old version still serves)"
   run_migrations ||
     die "Migration failed. Nothing was switched: the old version still runs. The database was backed up just before."
+
+  # The migrations may have created tables (on the very first deploy: the migration history table too).
+  # Run the role setup again so the app user gets exactly the intended rights on them.
+  ensure_db_roles ||
+    die "Database user setup failed after the migrations. Nothing was switched: the old version still runs."
 
   if ! switch_all || ! wait_until_healthy || ! versions_match; then
     warn "The new version is not healthy."
@@ -217,6 +281,13 @@ cmd_rollback() {
   log "Now running $previous. Database migrations were NOT undone (see docs/DEPLOYMENT.md)."
 }
 
+cmd_db_roles() {
+  check_env_layout
+  dc up -d --wait --wait-timeout 120 postgres
+  ensure_db_roles || die "Database user setup failed (see above)."
+  log "The limited database user is ready."
+}
+
 cmd_status() {
   printf 'Running version:  %s\n' "$(read_tag "$CURRENT_FILE")"
   printf 'Version before:   %s\n\n' "$(read_tag "$PREVIOUS_FILE")"
@@ -232,7 +303,7 @@ main() {
   case "$command" in
     deploy) cmd_deploy "$@" ;;
     rollback) cmd_rollback ;;
-    status | logs | reload-caddy | compose)
+    status | logs | reload-caddy | compose | db-roles)
       IMAGE_TAG=$(read_tag "$CURRENT_FILE")
       export IMAGE_TAG=${IMAGE_TAG:-none}
       case "$command" in
@@ -240,9 +311,10 @@ main() {
         logs) dc logs -f --tail=100 "$@" ;;
         reload-caddy) reload_caddy ;;
         compose) dc "$@" ;;
+        db-roles) cmd_db_roles ;;
       esac
       ;;
-    *) sed -n '2,14p' "$0" ;;
+    *) sed -n '2,11p' "$0" ;;
   esac
 }
 

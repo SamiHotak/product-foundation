@@ -161,6 +161,11 @@ How it all works and what to set up before production: [docs/FILES_AND_AI.md](do
 
 Putting it on a server (Hetzner, HTTPS, deploys, backups, rollback): [deploy/server-setup.md](deploy/server-setup.md) and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
+First deployment plan (also with no budget yet): [docs/FIRST_DEPLOY.md](docs/FIRST_DEPLOY.md).
+Security checklist and secret rotation: [docs/SECURITY.md](docs/SECURITY.md).
+Load test (`make loadtest`): [docs/LOADTEST.md](docs/LOADTEST.md).
+Starting a new product from this template: [docs/NEW_PRODUCT.md](docs/NEW_PRODUCT.md).
+
 ## Privacy (GDPR)
 
 **Settings → Privacy**: download a ZIP of your data (or the whole workspace, for admins), delete

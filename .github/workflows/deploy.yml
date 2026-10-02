@@ -178,8 +178,8 @@ jobs:
 
       - name: Copy the deploy files to the server
         run: |
-          scp deploy/docker-compose.yml deploy/Caddyfile deploy/deploy.sh deploy/backup.sh deploy/restore-test.sh deploy/.env.backup.example deploy-server:/opt/app/
-          ssh deploy-server 'chmod +x /opt/app/deploy.sh /opt/app/backup.sh /opt/app/restore-test.sh'
+          scp deploy/docker-compose.yml deploy/Caddyfile deploy/deploy.sh deploy/backup.sh deploy/restore-test.sh deploy/harden-server.sh deploy/security-audit.sh deploy/.env.backup.example deploy-server:/opt/app/
+          ssh deploy-server 'chmod +x /opt/app/deploy.sh /opt/app/backup.sh /opt/app/restore-test.sh /opt/app/harden-server.sh /opt/app/security-audit.sh'
 
       - name: Deploy (backup, migrate, switch, health check)
         env:

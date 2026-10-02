@@ -149,26 +149,31 @@ chmod 700 /home/deploy/.ssh
 chmod 600 /home/deploy/.ssh/authorized_keys
 ```
 
-**Turn off password login.** Root may still log in, but **only with a key** (your admin key from
-Step 2). You need root later for updates and reboots. The `deploy` user is only for GitHub.
-First make sure the `deploy` login works (see the test below), then:
+**Harden SSH (script).** The script turns off password login (only your keys work), limits login
+tries, installs fail2ban (bans an address after 4 wrong tries) and switches on automatic security
+updates. It first checks that a key exists, so it cannot lock you out. Root may still log in, but
+only with a key (you need root later for updates and reboots).
 
-```bash
-cat >/etc/ssh/sshd_config.d/99-hardening.conf <<'EOF'
-PasswordAuthentication no
-KbdInteractiveAuthentication no
-PermitRootLogin prohibit-password
-EOF
-sshd -t && systemctl restart ssh
+Open a **second** PowerShell window **on your PC**, go to the repository folder and copy the script:
+
+```powershell
+scp -i "$HOME\.ssh\my-app-admin" deploy/harden-server.sh root@SERVER_IP:/root/
 ```
 
-**Test before you close this window.** Open a **second** PowerShell window and run:
+Back in the first window (on the server, as root):
+
+```bash
+bash /root/harden-server.sh
+```
+
+**Test before you close the first window.** In the second PowerShell window run:
 
 ```powershell
 ssh -i "$HOME\.ssh\my-app-admin" deploy@SERVER_IP
 ```
 
 If you get in, all is good. If not, fix it **in the first window** (do not close it yet).
+The script can be run again at any time; nothing is doubled.
 
 **Server firewall as a second layer** (in the first window, as root):
 
@@ -180,7 +185,6 @@ ufw allow 80/tcp
 ufw allow 443/tcp
 ufw allow 443/udp
 ufw --force enable
-systemctl enable --now fail2ban
 ```
 
 > The `deploy` user can run Docker, and that is the same as being root on this server. So guard the
@@ -288,7 +292,8 @@ Make the secrets **on the server** like this (run it four times, use each result
 openssl rand -hex 32
 ```
 
-You need one for each of: `SECRET_KEY`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`.
+You need one for each of: `SECRET_KEY`, `POSTGRES_APP_PASSWORD`, `REDIS_PASSWORD`.
+There is a **fourth** one, the database admin password. It does **not** go into `.env` (see below).
 (The backup passphrase is made in Step 12, in a separate file.)
 
 Important values:
@@ -309,6 +314,22 @@ Save with `Ctrl+O`, `Enter`, `Ctrl+X`, then lock the file:
 ```bash
 chmod 600 .env
 ```
+
+**The database admin password (separate file).** The database has two users. `app_rt` is a limited
+user: the running app uses it and can only read and write rows (its password is
+`POSTGRES_APP_PASSWORD` in `.env`). The admin user `app` creates tables and is used only by
+`deploy.sh` (migrations, backups). Its password lives in its own file, which no app container can read:
+
+```bash
+mkdir -p /opt/app/secrets
+chmod 700 /opt/app/secrets
+openssl rand -hex 32 | tr -d '\n' > /opt/app/secrets/postgres_admin_password
+chmod 644 /opt/app/secrets/postgres_admin_password
+```
+
+The file is 644 because the Postgres container must read it; the folder is 700, so nobody else on the
+server can get to it. **Create this file BEFORE the first deploy**, and copy its content into your
+password manager (`cat /opt/app/secrets/postgres_admin_password`).
 
 **Save a copy of the whole `.env` in your password manager now.**
 
@@ -473,6 +494,19 @@ cd /opt/app
 ```bash
 ./deploy.sh status
 ```
+
+**Run the security check.** The deploy copied `security-audit.sh` to the server. It only reads; it
+changes nothing. Run it as root (it can then look at SSH and the firewall too):
+
+```bash
+exit                                   # back to root
+bash /opt/app/harden-server.sh         # again: now it can also fix the rights of /opt/app files
+bash /opt/app/security-audit.sh
+```
+
+Every line must start with `OK`. `WARN` lines: read them, fix what you can. `FAIL` lines: fix first.
+Run the audit again after every big change and once a month. What the checks mean, and how to rotate
+secrets: `docs/SECURITY.md`.
 
 ## Step 15. Check that errors reach Sentry
 

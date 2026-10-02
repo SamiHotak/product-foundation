@@ -44,6 +44,10 @@ class Settings(BaseSettings):
 
     # Databases and queues
     database_url: str = "postgresql+psycopg://app:app@localhost:5432/app"
+    # Production only: a second, more powerful database user that may create and change
+    # tables. Only migrations use it (`alembic`, `python -m app.scripts.db_roles`). The running
+    # app connects with DATABASE_URL, a limited user. Empty = migrations use DATABASE_URL (dev).
+    migration_database_url: SecretStr | None = None  # SecretStr: never printed by accident
     redis_url: str = "redis://localhost:6379/0"
     celery_broker_url: str | None = None  # defaults to redis_url
     celery_result_backend: str | None = None  # defaults to redis_url

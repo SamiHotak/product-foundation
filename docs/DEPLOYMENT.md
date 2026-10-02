@@ -110,10 +110,30 @@ cd /opt/app
   -c "DROP DATABASE app WITH (FORCE)" -c "CREATE DATABASE app"
 ./restore-test.sh --stdout <name> \
   | ./deploy.sh compose exec -T postgres pg_restore -U app -d app --no-owner --exit-on-error
+./deploy.sh db-roles                           # gives the limited app user its rights on the new database
 ./deploy.sh deploy "$(cat .deployed_tag)"      # start everything again
 ```
 
+`db-roles` matters: dropping and creating the database loses the rights of the limited user `app_rt`
+(see [Two database users](#two-database-users)). The deploy repeats it by itself, but do it here so a
+failure shows up before the app starts.
+
 If step 1 or 2 fails, stop there: nothing has been changed. Practise this once on a test server before you need it.
+
+<a id="two-database-users"></a>
+## Two database users
+
+The database has two users (details and reasons: `docs/SECURITY.md`):
+
+- `app_rt`: used by the API, worker and beat. Reads and writes rows only. Password: `POSTGRES_APP_PASSWORD` in `.env`.
+- `app`: the admin (Postgres superuser). Used only by `deploy.sh` (migrations, backups, restore). Password:
+  the file `/opt/app/secrets/postgres_admin_password`. It is never in `.env` and never inside an app container.
+
+Every deploy runs `ensure_db_roles` after the backup and before the migrations: it creates or updates
+`app_rt` and re-grants its rights. Run it alone with `./deploy.sh db-roles`.
+**Upgrading an older server** (one that has `POSTGRES_PASSWORD` in `.env`): create the secrets file with the
+*old* `POSTGRES_PASSWORD` value (so the admin password stays the same), put a **new** random value into
+`POSTGRES_APP_PASSWORD`, remove `POSTGRES_PASSWORD` from `.env`, then deploy.
 
 <a id="security-headers"></a>
 ## Security headers and the CSP
@@ -157,3 +177,5 @@ on a busy site it may be only hours, on a quiet one weeks. Tell the truth about 
 - The deploy and rollback scripts are tested with a stub of Docker, not against a real Docker daemon.
   Your first real deploy is the real test: do it on a staging server or before you have customers.
 - `DEMO_ENABLED` should be `false` on a real product.
+- The SSH, firewall and fail2ban scripts (`harden-server.sh`, `security-audit.sh`) are tested with pretend
+  system commands. The first run on a real server is the real test (keep a second login window open).
