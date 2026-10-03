@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Turn a fresh copy of this template into your own product (name, tagline, color, image path).
 
     python scripts/new_product.py --name AskDocs --tagline "Ask questions about your documents." \
@@ -67,19 +66,31 @@ def build_edits(args: argparse.Namespace) -> list[Edit]:
     tagline = literal(json.dumps(args.tagline)[1:-1])
     monogram = literal(json.dumps(args.monogram or args.name[0].upper())[1:-1])
     edits = [
-        Edit("frontend/config/product.ts", r'^(  name: )"Foundation",', rf'\g<1>"{json_name}",'),
+        Edit(
+            "frontend/config/product.ts",
+            r'^(  name: )"Foundation",',
+            rf'\g<1>"{json_name}",',
+        ),
         Edit(
             "frontend/config/product.ts",
             r'^(  tagline: )".*",',
             rf'\g<1>"{tagline}",',
         ),
-        Edit("frontend/config/product.ts", r'^(  monogram: )"[^"]*",', rf'\g<1>"{monogram}",'),
+        Edit(
+            "frontend/config/product.ts",
+            r'^(  monogram: )"[^"]*",',
+            rf'\g<1>"{monogram}",',
+        ),
         Edit(
             "frontend/config/product.ts",
             r'accent: \{ light: "#[0-9A-Fa-f]{6}", dark: "#[0-9A-Fa-f]{6}" \}',
             f'accent: {{ light: "{args.accent}", dark: "{args.accent_dark}" }}',
         ),
-        Edit("deploy/docker-compose.dev.yml", r"^(  APP_NAME: )Foundation ", rf"\g<1>{name} "),
+        Edit(
+            "deploy/docker-compose.dev.yml",
+            r"^(  APP_NAME: )Foundation ",
+            rf"\g<1>{name} ",
+        ),
         Edit("deploy/.env.example", r"^APP_NAME=Foundation$", f"APP_NAME={name}"),
         Edit(
             "deploy/.env.example",
@@ -96,7 +107,11 @@ def build_edits(args: argparse.Namespace) -> list[Edit]:
             r'email_from: str = "Foundation <no-reply@localhost>"',
             f'email_from: str = "{json_name} <no-reply@localhost>"',
         ),
-        Edit("frontend/package.json", r'^(  "name": )"[^"]+"', rf'\g<1>"{args.slug}-frontend"'),
+        Edit(
+            "frontend/package.json",
+            r'^(  "name": )"[^"]+"',
+            rf'\g<1>"{args.slug}-frontend"',
+        ),
         Edit(
             "frontend/package-lock.json",
             r'^(\s*"name": )"product-foundation-frontend"',
@@ -142,17 +157,31 @@ def validate(args: argparse.Namespace) -> str | None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--name", required=True, help='product name, e.g. "AskDocs"')
-    parser.add_argument("--tagline", required=True, help="one sentence: what it does for the user")
-    parser.add_argument("--accent", required=True, help="brand color for light mode, e.g. #0F766E")
-    parser.add_argument("--accent-dark", required=True, help="brand color for dark mode")
-    parser.add_argument("--github-user", required=True, help="your GitHub user or organisation")
-    parser.add_argument("--repo", required=True, help="the name of the new GitHub repository")
-    parser.add_argument("--slug", help="short name for package names (default: the repo name)")
+    parser.add_argument(
+        "--tagline", required=True, help="one sentence: what it does for the user"
+    )
+    parser.add_argument(
+        "--accent", required=True, help="brand color for light mode, e.g. #0F766E"
+    )
+    parser.add_argument(
+        "--accent-dark", required=True, help="brand color for dark mode"
+    )
+    parser.add_argument(
+        "--github-user", required=True, help="your GitHub user or organisation"
+    )
+    parser.add_argument(
+        "--repo", required=True, help="the name of the new GitHub repository"
+    )
+    parser.add_argument(
+        "--slug", help="short name for package names (default: the repo name)"
+    )
     parser.add_argument(
         "--monogram", help="1-2 letters for the logo square (default: first letter)"
     )
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="repository root")
-    parser.add_argument("--dry-run", action="store_true", help="only show what would change")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="only show what would change"
+    )
     args = parser.parse_args(argv)
     args.slug = args.slug or args.repo.lower()
 
@@ -165,7 +194,10 @@ def main(argv: list[str] | None = None) -> int:
     except ChangeError as error:
         print(f"ERROR: {error}\nNothing was changed.")
         return 1
-    print(("Would change:" if args.dry_run else "Changed:") + "".join(f"\n  {f}" for f in changed))
+    print(
+        ("Would change:" if args.dry_run else "Changed:")
+        + "".join(f"\n  {f}" for f in changed)
+    )
     if not args.dry_run:
         print("\nNext: docs/NEW_PRODUCT.md, section 'After the script'.")
     return 0
